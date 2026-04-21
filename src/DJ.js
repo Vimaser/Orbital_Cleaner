@@ -1,39 +1,39 @@
 // DJ.js - Handles Prosperity Radio DJ line selection and playback
 
-const DJ_PATH = '/assets/DJ/';
+const DJ_PATH = '/assets/dj/';
 
 // Common rotation lines
 const COMMON_LINES = [
-  'DJ1.ogg',
-  'DJ2.ogg',
-  'DJ3.ogg',
-  'DJ4.ogg',
-  'DJ5.ogg',
-  'DJ6.ogg',
-  'DJ7.ogg',
-  'DJ8.ogg',
-  'DJ9.ogg',
-  'DJ10.ogg',
-  'DJ11.ogg',
-  'DJ12.ogg',
-  'DJ13.ogg',
-  'DJ14.ogg',
-  'DJ15.ogg',
-  'DJ16.ogg',
-  'DJ17.ogg',
-  'DJ18.ogg',
-  'DJ19.ogg',
-  'DJ20.ogg'
+  'dj1.ogg',
+  'dj2.ogg',
+  'dj3.ogg',
+  'dj4.ogg',
+  'dj5.ogg',
+  'dj6.ogg',
+  'dj7.ogg',
+  'dj8.ogg',
+  'dj9.ogg',
+  'dj10.ogg',
+  'dj11.ogg',
+  'dj12.ogg',
+  'dj13.ogg',
+  'dj14.ogg',
+  'dj15.ogg',
+  'dj16.ogg',
+  'dj17.ogg',
+  'dj18.ogg',
+  'dj19.ogg',
+  'dj20.ogg'
 ];
 
 // Rare / uncanny / AI-feeling lines
 const RARE_LINES = [
-  'DJ21.ogg',
-  'DJ22.ogg',
-  'DJ23.ogg',
-  'DJ24.ogg',
-  'DJ25.ogg',
-  'DJ26.ogg'
+  'dj21.ogg',
+  'dj22.ogg',
+  'dj23.ogg',
+  'dj24.ogg',
+  'dj25.ogg',
+  'dj26.ogg'
 ];
 
 const RARE_CHANCE = 0.15;
