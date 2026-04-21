@@ -672,4 +672,21 @@ export function updatePlayer(player, state, keys, dt, config, camera = null) {
   }
 
   updateHeatFx(player, state, dt, config, camera);
+
+  // --- Auto-hide target ring if no nearby valid debris ---
+  const ring = player.userData.playerTargetRing;
+  const targetDebris = player.userData.primaryTargetDebris;
+
+  if (ring) {
+    if (!targetDebris || !targetDebris.userData?.active) {
+      ring.visible = false;
+    } else {
+      const distance = player.position.distanceTo(targetDebris.position);
+      const maxRingDistance = 8;
+
+      if (distance > maxRingDistance) {
+        ring.visible = false;
+      }
+    }
+  }
 }

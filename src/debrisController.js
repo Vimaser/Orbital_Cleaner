@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { spawnBurnupExplosion } from './effects.js'
 export const DEBRIS_CONTROLLER_TUNING = {
   captureDistance: 2.9,
   captureAlignment: 0.74,
@@ -663,6 +664,9 @@ export function updateDebrisController({
         originalSize: debris.userData.size,
         cascadeCount: debris.userData.cascadeCount,
       })
+
+      // --- Spawn burn breakup effect before removal ---
+      spawnBurnupExplosion(scene, debris.position.clone(), debris.userData.size)
 
       debris.userData.disposeReason = 'burned'
       disposeDebris?.(debris)
