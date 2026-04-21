@@ -1,6 +1,5 @@
 // DJ.js - Handles Prosperity Radio DJ line selection and playback
 
-const DJ_PATH = '/assets/dj/';
 
 // Common rotation lines
 const COMMON_LINES = [
@@ -36,6 +35,10 @@ const RARE_LINES = [
   'dj26.ogg'
 ];
 
+function resolveDJFileUrl(fileName) {
+  return new URL(`../assets/dj/${fileName}`, import.meta.url).href;
+}
+
 const RARE_CHANCE = 0.15;
 const DEFAULT_VOLUME = 0.6;
 
@@ -66,7 +69,7 @@ export function playDJLine(onComplete) {
   stopDJ();
 
   const nextFile = pickNextLine();
-  const audio = new Audio(`${DJ_PATH}${nextFile}`);
+  const audio = new Audio(resolveDJFileUrl(nextFile));
 
   currentDJAudio = audio;
   audio.volume = DEFAULT_VOLUME;
