@@ -2,7 +2,7 @@
 
 const DEFAULT_OPTIONS = {
   deadzone: 0.28,
-  joystickSize: 120,
+  joystickSize: 160,
   knobSize: 52,
   throttleRepeatMs: 80,
   boostLabel: "BOOST",
@@ -126,8 +126,9 @@ export function createMobileControls(keys, userOptions = {}) {
   joystickZone.id = "mobile-joystick-zone";
   Object.assign(joystickZone.style, {
     position: "absolute",
-    left: "16px",
+    left: "50%",
     bottom: "18px",
+    transform: "translateX(-50%)",
     width: `${options.joystickSize}px`,
     height: `${options.joystickSize}px`,
     borderRadius: "999px",
@@ -169,8 +170,8 @@ export function createMobileControls(keys, userOptions = {}) {
   throttleStack.id = "mobile-throttle-stack";
   Object.assign(throttleStack.style, {
     position: "absolute",
-    left: "26px",
-    bottom: `${18 + options.joystickSize + 14}px`,
+    left: "18px",
+    bottom: `${18 + options.joystickSize + 24}px`,
     display: "flex",
     flexDirection: "column",
     gap: "10px",

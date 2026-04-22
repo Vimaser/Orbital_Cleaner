@@ -107,9 +107,12 @@ The following assets are used under the Creative Commons Attribution 4.0 License
 - "Dawn" (https://skfb.ly/6oPxY) by uperesito
 - "Astronaut floating in space" (https://skfb.ly/6WMPY) by nitwit.friends
 - "ISS" (https://skfb.ly/6oOBH) by uperesito
+- "Earth | Terra - Downloadable model" (https://skfb.ly/X7P9) by murilo.kleine
 
 All assets are licensed under Creative Commons Attribution (CC BY 4.0):
 http://creativecommons.org/licenses/by/4.0/
+
+"Earth | Terra - Downloadable model" is licensed under Creative Commons Attribution 4.0 (http://creativecommons.org/licenses/by/4.0/).
 
 ## License
 

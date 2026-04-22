@@ -1,13 +1,32 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import earthGlbUrl from '../assets/models/earth.glb?url'
+import terraGlbUrl from '../assets/models/terra.glb?url'
+
+function isMobileLikeDevice() {
+  if (typeof window === 'undefined') return false
+  const coarse = window.matchMedia?.('(pointer: coarse)')?.matches
+  const touchPoints = navigator.maxTouchPoints > 0
+  return !!(coarse || touchPoints)
+}
+
+function isSafariBrowser() {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|Chromium|Android/i.test(ua)
+  return isSafari
+}
 
 export function createPlanet(scene, planetRadius) {
   const planet = new THREE.Object3D()
 
   const loader = new GLTFLoader()
 
-  loader.load(earthGlbUrl, (gltf) => {
+  const useLightPlanet = isMobileLikeDevice() || isSafariBrowser()
+  const planetGlbUrl = useLightPlanet ? terraGlbUrl : earthGlbUrl
+  const overlaySegments = useLightPlanet ? 32 : 64
+
+  loader.load(planetGlbUrl, (gltf) => {
     const earth = gltf.scene
 
     // Normalize + scale model to match gameplay radius
@@ -107,7 +126,7 @@ export function createPlanet(scene, planetRadius) {
     })
 
     const nightSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(planetRadius * 1.01, 64, 64),
+      new THREE.SphereGeometry(planetRadius * 1.01, overlaySegments, overlaySegments),
       nightMaterial
     )
     nightSphere.name = 'NightLightsLayer'
@@ -164,7 +183,7 @@ export function createPlanet(scene, planetRadius) {
     })
 
     const auroraSphere = new THREE.Mesh(
-      new THREE.SphereGeometry(planetRadius * 1.018, 64, 64),
+      new THREE.SphereGeometry(planetRadius * 1.018, overlaySegments, overlaySegments),
       auroraMaterial
     )
     auroraSphere.name = 'AuroraLayer'
@@ -175,7 +194,7 @@ export function createPlanet(scene, planetRadius) {
     planet.add(auroraSphere)
 
     // Handle animation if present
-    if (gltf.animations && gltf.animations.length > 0) {
+    if (!useLightPlanet && gltf.animations && gltf.animations.length > 0) {
       const mixer = new THREE.AnimationMixer(earth)
       gltf.animations.forEach((clip) => {
         const action = mixer.clipAction(clip)
@@ -211,13 +230,14 @@ export function updatePlanet(planet, dt) {
   }
 
   const auroraLayer = planet.children.find(c => c.name === 'AuroraLayer')
-  if (auroraLayer?.material?.map) {
+  const auroraMaterial = auroraLayer?.material
+  if (auroraMaterial?.map) {
     const t = performance.now() * 0.001
-    auroraLayer.material.map.offset.x = (t * 0.0025) % 1
+    auroraMaterial.map.offset.x = (t * 0.0025) % 1
 
     // More visible on the night side, but still faint overall.
     const nightFactor = 1 - ((Math.sin(planet.rotation.y) + 1) * 0.5)
     const pulse = 0.88 + Math.sin(t * 1.7) * 0.12
-    auroraLayer.material.opacity = Math.max(0.04, 0.42 * nightFactor * pulse)
+    auroraMaterial.opacity = Math.max(0.04, 0.42 * nightFactor * pulse)
   }
 }
