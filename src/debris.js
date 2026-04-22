@@ -21,6 +21,118 @@ export const DEBRIS_TUNING = {
   maxReleaseOrbitSpeed: 0.22,
 };
 
+function getBaseScaleBySize(size = "MEDIUM") {
+  const normalized = String(size).toUpperCase();
+
+  if (normalized === "SMALL") {
+    return new THREE.Vector3(0.55, 0.75, 0.6);
+  }
+
+  if (normalized === "LARGE") {
+    return new THREE.Vector3(1.35, 0.85, 1.15);
+  }
+
+  return new THREE.Vector3(1.05, 1.05, 1.05);
+}
+
+function getBurnShrinkFactor(size = "MEDIUM", burnProgress = 0) {
+  const normalized = String(size).toUpperCase();
+  const t = THREE.MathUtils.clamp(burnProgress, 0, 1);
+
+  if (normalized === "SMALL") {
+    return THREE.MathUtils.lerp(1, 0.65, t);
+  }
+
+  if (normalized === "LARGE") {
+    return THREE.MathUtils.lerp(1, 0.72, t);
+  }
+
+  return THREE.MathUtils.lerp(1, 0.7, t);
+}
+
+function cacheDebrisGeometryState(debris) {
+  if (!debris?.geometry) return;
+
+  const positionAttr = debris.geometry.attributes.position;
+  if (!positionAttr) return;
+
+  debris.userData.baseVertexPositions = Float32Array.from(positionAttr.array);
+  debris.userData.lastNormalUpdateProgress = -1;
+  debris.userData.normalUpdateCooldown = 0;
+
+  const vertexCount = positionAttr.count;
+  const seeds = new Float32Array(vertexCount);
+  for (let i = 0; i < vertexCount; i += 1) {
+    seeds[i] = Math.random();
+  }
+  debris.userData.vertexBurnSeeds = seeds;
+}
+
+function applyDebrisBurnDeformation(debris, burnProgress = 0) {
+  if (!debris?.geometry || !debris?.userData) return;
+
+  const positionAttr = debris.geometry.attributes.position;
+  const basePositions = debris.userData.baseVertexPositions;
+  const burnSeeds = debris.userData.vertexBurnSeeds;
+
+  if (!positionAttr || !basePositions || !burnSeeds) return;
+
+  const t = THREE.MathUtils.clamp(burnProgress, 0, 1);
+  const time = performance.now() * 0.001;
+  const dtGuess = 1 / 60;
+  const size = debris.userData.size ?? "MEDIUM";
+  const shrink = getBurnShrinkFactor(size, t);
+  const array = positionAttr.array;
+
+  for (let i = 0; i < positionAttr.count; i += 1) {
+    const i3 = i * 3;
+    const bx = basePositions[i3];
+    const by = basePositions[i3 + 1];
+    const bz = basePositions[i3 + 2];
+
+    const seed = burnSeeds[i];
+    const uneven = 1 - t * (0.12 + seed * 0.24);
+    const pulse = Math.sin(time * (2.5 + seed * 3.5) + seed * 10) * t * 0.035;
+    const scalar = Math.max(0.18, shrink * uneven + pulse);
+
+    array[i3] = bx * scalar;
+    array[i3 + 1] = by * scalar;
+    array[i3 + 2] = bz * scalar;
+  }
+
+  positionAttr.needsUpdate = true;
+
+  debris.userData.normalUpdateCooldown = Math.max(
+    0,
+    (debris.userData.normalUpdateCooldown ?? 0) - dtGuess,
+  );
+
+  const lastNormalUpdateProgress =
+    debris.userData.lastNormalUpdateProgress ?? -1;
+  const shouldRefreshNormals =
+    t <= 0.001 ||
+    t >= 0.999 ||
+    lastNormalUpdateProgress < 0 ||
+    Math.abs(t - lastNormalUpdateProgress) >= 0.08 ||
+    (debris.userData.normalUpdateCooldown ?? 0) <= 0;
+
+  if (shouldRefreshNormals) {
+    debris.geometry.computeVertexNormals();
+    debris.userData.lastNormalUpdateProgress = t;
+    debris.userData.normalUpdateCooldown = 0.1;
+  }
+
+  const baseScale = debris.userData.baseScale;
+  if (baseScale) {
+    const axisJitter = 1 - t * 0.06;
+    debris.scale.set(
+      baseScale.x * axisJitter,
+      baseScale.y * (1 - t * 0.1),
+      baseScale.z * (1 - t * 0.08),
+    );
+  }
+}
+
 function getOrbitBasis(inclination, ascendingNode) {
   const q = new THREE.Quaternion()
     .setFromAxisAngle(new THREE.Vector3(0, 1, 0), ascendingNode)
@@ -165,32 +277,47 @@ function createDebrisGeometryBySize(size = "MEDIUM") {
   const normalized = String(size).toUpperCase();
 
   if (normalized === "SMALL") {
-    return new THREE.TetrahedronGeometry(0.3, 0);
+    // sharper, smaller shard
+    return new THREE.TetrahedronGeometry(0.22, 0);
   }
 
   if (normalized === "LARGE") {
-    return new THREE.BoxGeometry(0.95, 0.58, 0.72);
+    // broad slab-like piece
+    return new THREE.BoxGeometry(1.25, 0.75, 1.05);
   }
 
-  return new THREE.IcosahedronGeometry(0.45, 0);
+  // chunky mid piece
+  return new THREE.IcosahedronGeometry(0.5, 0);
 }
 
 function applyDebrisShapeVariation(debris, size = "MEDIUM") {
-  const normalized = String(size).toUpperCase();
+  const baseScale = getBaseScaleBySize(size);
+  debris.scale.copy(baseScale);
+  debris.userData.baseScale = baseScale.clone();
 
-  if (normalized === "SMALL") {
-    debris.scale.set(0.9, 1.15, 0.82);
-  } else if (normalized === "LARGE") {
-    debris.scale.set(1.18, 0.86, 1.02);
-  } else {
-    debris.scale.set(1.0, 1.0, 1.0);
-  }
-
+  // keep some visual randomness (will be partially overridden by lookAt, but still helps)
   debris.rotation.set(
     Math.random() * Math.PI,
     Math.random() * Math.PI,
     Math.random() * Math.PI,
   );
+}
+
+// TODO: Known bug to revisit later.
+// There are still some glitches in the debris payout / burn chain logic.
+// Specifically, when burning a MEDIUM down to SMALL, the terminal payout
+// sometimes does not trigger correctly. Circle back and debug the
+// burn-disposal / payout handoff path later.
+function getTerminalPayoutBySize(size = "MEDIUM") {
+  const normalized = String(size).toUpperCase();
+
+  // Economy tuning:
+  // SMALL = common cleanup payout
+  // MEDIUM = notable score / worthwhile catch
+  // LARGE = rare jackpot-style treasure burn
+  if (normalized === "LARGE") return 2400;
+  if (normalized === "MEDIUM") return 950;
+  return 300;
 }
 
 function updateDebrisVisuals(debris, dt) {
@@ -202,6 +329,13 @@ function updateDebrisVisuals(debris, dt) {
   const burnDepth = THREE.MathUtils.clamp(visual.burnDepth ?? 0, 0, 1);
   const inBurnZone = !!visual.inBurnZone;
   const time = performance.now() * 0.001;
+
+  const burnProgress = THREE.MathUtils.clamp(
+    (debris.userData.burnDamage ?? 0) /
+      Math.max(0.0001, debris.userData.burnThreshold ?? 1),
+    0,
+    1,
+  );
 
   const baseColor = new THREE.Color(0xff8844);
   const warmColor = new THREE.Color(0xffb347);
@@ -226,15 +360,19 @@ function updateDebrisVisuals(debris, dt) {
     ? 0.9 + Math.sin(time * (6 + burnDepth * 10)) * (0.08 + burnDepth * 0.16)
     : 1;
 
-  material.emissiveIntensity = (0.35 + heatRatio * 1.8 + burnDepth * 0.9) * flicker;
+  material.emissiveIntensity =
+    (0.35 + heatRatio * 1.8 + burnDepth * 0.9 + burnProgress * 0.75) *
+    flicker;
 
   const baseOpacity = debris.userData.revealed ? 1.0 : 0.35;
   material.opacity = inBurnZone
     ? THREE.MathUtils.clamp(baseOpacity + burnDepth * 0.12, baseOpacity, 0.94)
     : baseOpacity;
 
-  debris.rotation.x += dt * (0.15 + heatRatio * 0.4);
-  debris.rotation.y += dt * (0.12 + burnDepth * 0.35);
+  applyDebrisBurnDeformation(debris, burnProgress);
+
+  debris.rotation.x += dt * (0.15 + heatRatio * 0.4 + burnProgress * 0.15);
+  debris.rotation.y += dt * (0.12 + burnDepth * 0.35 + burnProgress * 0.12);
 
   if (debris.userData.targetRing?.material && debris.userData.attached) {
     const ringMaterial = debris.userData.targetRing.material;
@@ -260,6 +398,7 @@ export function createDebris(planetRadius, options = {}) {
   );
 
   applyDebrisShapeVariation(debris, requestedSize);
+  cacheDebrisGeometryState(debris);
 
   const targetRing = createDebrisTargetRing();
   debris.add(targetRing);
@@ -310,20 +449,35 @@ export function createDebris(planetRadius, options = {}) {
   const sizeRoll = Math.random();
   let size = requestedSize;
   if (!options.size) {
-    size = "SMALL";
-    if (sizeRoll > 0.7) size = "MEDIUM";
-    if (sizeRoll > 0.9) size = "LARGE";
+    // Gameplay weighting:
+    // SMALL = common orbital clutter
+    // MEDIUM = rarer, more notable targets
+    // LARGE = special event-style catches
+    if (sizeRoll > 0.96) size = "LARGE";
+    else if (sizeRoll > 0.78) size = "MEDIUM";
+    else size = "SMALL";
 
     if (size !== requestedSize) {
       debris.geometry.dispose();
       debris.geometry = createDebrisGeometryBySize(size);
       applyDebrisShapeVariation(debris, size);
+      cacheDebrisGeometryState(debris);
     }
   }
 
   const cfg = DEBRIS_TUNING.sizeConfig[size];
+  const originalSize = String(options.originalSize ?? size).toUpperCase();
+  const terminalPayout =
+    options.terminalPayout ?? getTerminalPayoutBySize(originalSize);
+  const debrisChainId =
+    options.debrisChainId ??
+    `debris_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
   debris.userData.size = size;
+  debris.userData.originalSize = originalSize;
+  debris.userData.terminalPayout = terminalPayout;
+  debris.userData.debrisChainId = debrisChainId;
+  debris.userData.payoutAwarded = options.payoutAwarded ?? false;
   debris.userData.mass = cfg.mass;
   debris.userData.burnThreshold = cfg.burnThreshold;
   debris.userData.instabilityMultiplier = cfg.instabilityMultiplier ?? 1.0;
@@ -334,6 +488,12 @@ export function createDebris(planetRadius, options = {}) {
   debris.userData.burnDamage = 0;
   debris.userData.active = true;
   debris.userData.captureProgress = 0;
+
+  debris.userData.visual = {
+    heatRatio: 0,
+    burnDepth: 0,
+    inBurnZone: false,
+  };
 
   return debris;
 }
@@ -595,6 +755,15 @@ export function updateDebrisHeat(debris, playerRadius, burnRadius, dt) {
     }
 
     if ((debris.userData.burnDamage ?? 0) >= debris.userData.burnThreshold) {
+      debris.userData.visual = {
+        heatRatio: THREE.MathUtils.clamp(
+          debris.userData.heat / Math.max(0.001, debris.userData.burnThreshold),
+          0,
+          1,
+        ),
+        burnDepth: 1,
+        inBurnZone: true,
+      };
       return "BURNED";
     }
   } else {
@@ -605,6 +774,24 @@ export function updateDebrisHeat(debris, playerRadius, burnRadius, dt) {
       debris.userData.heat - dt * DEBRIS_TUNING.heatCoolPerSecond,
     );
   }
+
+  const heatRatio = THREE.MathUtils.clamp(
+    debris.userData.heat / Math.max(0.001, debris.userData.burnThreshold),
+    0,
+    1,
+  );
+  const burnDepth = THREE.MathUtils.clamp(
+    (debris.userData.burnDamage ?? 0) /
+      Math.max(0.001, debris.userData.burnThreshold),
+    0,
+    1,
+  );
+
+  debris.userData.visual = {
+    heatRatio,
+    burnDepth,
+    inBurnZone: playerRadius < burnRadius,
+  };
 
   return null;
 }

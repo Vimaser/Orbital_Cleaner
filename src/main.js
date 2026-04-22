@@ -130,6 +130,7 @@ import {
   consumeComboExpiredFlag,
   penalizeComboTimer,
 } from "./comboSystem.js";
+import { createMobileControls } from "./mobileControls.js";
 
 const { scene, camera, renderer } = createScene();
 
@@ -223,6 +224,7 @@ const forwardLookDistance = 14;
 const forwardDriftBlend = 0.06;
 
 const keys = {};
+const mobileControls = createMobileControls(keys);
 const MISSION_FOCUS_ORDER = ["REPAIR", "DEBRIS", "OPEN"];
 
 const PRESSURE_CONFIG = {
@@ -291,6 +293,19 @@ function ensureBackgroundAudioStarted() {
   shipMenuState.audioStarted = true;
 }
 
+function handleMobilePauseRequest() {
+  if (!appState.started) {
+    return;
+  }
+
+  ensureBackgroundAudioStarted();
+
+  if (!shiftState.terminalOpen) {
+    pauseState.paused = !pauseState.paused;
+    setUIState(pauseState.paused ? UI_STATE.PAUSED : UI_STATE.GAME);
+  }
+}
+
 function syncRadioState() {
   if (shipMenuState.radioEnabled) {
     stopLoop("deepSpace");
@@ -320,12 +335,8 @@ window.addEventListener("keydown", (e) => {
 
   // Pause system
   if (!e.repeat && e.code === "Escape") {
-    // Do not pause if terminal is open
-    if (!shiftState.terminalOpen) {
-      pauseState.paused = !pauseState.paused;
-      setUIState(pauseState.paused ? UI_STATE.PAUSED : UI_STATE.GAME);
-      return;
-    }
+    handleMobilePauseRequest();
+    return;
   }
   if (!e.repeat && e.code === "Backquote") {
     if (!shiftState.terminalOpen) {
@@ -414,6 +425,7 @@ createMenuUI({
   currentRadioTrack: shipMenuState.radioTrack,
   currentSpaceTrack: shipMenuState.spaceTrack,
 });
+mobileControls.setPauseHandler(handleMobilePauseRequest);
 
 if (!shipMenuState.radioEnabled) {
   startLoop("deepSpace");
@@ -1516,12 +1528,24 @@ function animate() {
 
   const disposalEvents = debrisManagerState.lastFrame?.disposalEvents || [];
   const burnDisposals = disposalEvents.filter(
-    (event) => event?.reason === "burned",
+    (event) => event?.reason === "burned_terminal",
   );
 
   if (burnDisposals.length > 0) {
     for (const burnEvent of burnDisposals) {
-      const debrisReward = mission.type === "DEBRIS" ? 320 : 240;
+      const terminalPayout =
+        typeof burnEvent?.terminalPayout === "number"
+          ? burnEvent.terminalPayout
+          : burnEvent?.originalSize === "LARGE"
+            ? 500
+            : burnEvent?.originalSize === "MEDIUM"
+              ? 320
+              : 180;
+
+      const debrisReward =
+        mission.type === "DEBRIS"
+          ? terminalPayout
+          : Math.max(120, Math.round(terminalPayout * 0.75));
       const comboResult = registerComboEvent("debris", debrisReward);
       const comboBonus = comboResult.bonus;
       shiftBonusPay += comboBonus;
@@ -1561,6 +1585,8 @@ function animate() {
       console.log("DEBRIS BURN DISPOSAL", {
         score,
         size: burnEvent?.size || null,
+        originalSize: burnEvent?.originalSize || null,
+        terminalPayout,
         comboChain: comboResult.chainCount,
         comboMultiplier: comboResult.multiplier,
         comboBonus,

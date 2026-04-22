@@ -313,6 +313,10 @@ function spawnReplacementDebris({
   const newDebris = createDebris(planetRadius, {
     size: nextSize,
     cascadeCount,
+    originalSize: debris.userData.originalSize,
+    terminalPayout: debris.userData.terminalPayout,
+    debrisChainId: debris.userData.debrisChainId,
+    payoutAwarded: debris.userData.payoutAwarded,
   })
 
   newDebris.position.copy(debris.position)
@@ -660,31 +664,108 @@ export function updateDebrisController({
     )
 
     if (burnResult === 'BURNED') {
-      console.log('Debris burned up!', {
-        originalSize: debris.userData.size,
-        cascadeCount: debris.userData.cascadeCount,
+      const currentSize = debris.userData.size
+      const nextSize = getNextDebrisSize(currentSize)
+
+      // --- In-place degradation ---
+      if (nextSize) {
+        console.log('Debris degraded during burn (in-place)', {
+          from: currentSize,
+          to: nextSize,
+          originalSize: debris.userData.originalSize,
+        })
+
+        // visual feedback for stage loss
+        spawnBurnupExplosion(scene, debris.position.clone(), currentSize)
+
+        // build a temporary next-stage debris so we can steal its visual shape
+        // and updated size-dependent properties, while keeping the same live object.
+        const stageDebris = createDebris(planetRadius, {
+          size: nextSize,
+          originalSize: debris.userData.originalSize,
+          terminalPayout: debris.userData.terminalPayout,
+          debrisChainId: debris.userData.debrisChainId,
+          payoutAwarded: debris.userData.payoutAwarded,
+          cascadeCount: debris.userData.cascadeCount,
+        })
+
+        // update size tier + visuals in-place
+
+        if (debris.geometry) {
+          debris.geometry.dispose()
+        }
+        debris.geometry = stageDebris.geometry
+        stageDebris.geometry = null
+
+        debris.scale.copy(stageDebris.scale)
+        debris.rotation.copy(stageDebris.rotation)
+
+        debris.userData.baseScale = stageDebris.userData.baseScale?.clone?.() ?? null
+        debris.userData.baseVertexPositions = stageDebris.userData.baseVertexPositions
+          ? Float32Array.from(stageDebris.userData.baseVertexPositions)
+          : null
+        debris.userData.vertexBurnSeeds = stageDebris.userData.vertexBurnSeeds
+          ? Float32Array.from(stageDebris.userData.vertexBurnSeeds)
+          : null
+        debris.userData.lastNormalUpdateProgress = -1
+        debris.userData.normalUpdateCooldown = 0
+
+        // update size-dependent physics/state from the new size profile
+        debris.userData.size = nextSize
+        debris.userData.mass = stageDebris.userData.mass
+        debris.userData.burnThreshold = stageDebris.userData.burnThreshold
+        debris.userData.instabilityMultiplier = stageDebris.userData.instabilityMultiplier
+
+        // reset burn state so the new stage has to actually burn down
+        // instead of immediately cascading again on the next frame.
+        debris.userData.heat = 0
+        debris.userData.burnDamage = 0
+        debris.userData.captureProgress = 0
+
+        if (!debris.userData.visual) {
+          debris.userData.visual = {}
+        }
+        debris.userData.visual.heatRatio = 0
+        debris.userData.visual.burnDepth = 0
+        debris.userData.visual.inBurnZone = inBurnZone
+
+        // cleanup temporary shell
+        if (stageDebris.material) {
+          stageDebris.material.dispose()
+        }
+        if (stageDebris.userData?.targetRing) {
+          if (stageDebris.userData.targetRing.geometry) {
+            stageDebris.userData.targetRing.geometry.dispose()
+          }
+          if (stageDebris.userData.targetRing.material) {
+            stageDebris.userData.targetRing.material.dispose()
+          }
+        }
+        if (stageDebris.userData?.stabilityRing) {
+          if (stageDebris.userData.stabilityRing.geometry) {
+            stageDebris.userData.stabilityRing.geometry.dispose()
+          }
+          if (stageDebris.userData.stabilityRing.material) {
+            stageDebris.userData.stabilityRing.material.dispose()
+          }
+        }
+
+        return debris
+      }
+
+      // --- Terminal destruction (SMALL only) ---
+      console.log('Debris fully burned (terminal)', {
+        originalSize: debris.userData.originalSize,
+        payout: debris.userData.terminalPayout,
       })
 
-      // --- Spawn burn breakup effect before removal ---
       spawnBurnupExplosion(scene, debris.position.clone(), debris.userData.size)
 
-      debris.userData.disposeReason = 'burned'
+      debris.userData.disposeReason = 'burned_terminal'
       disposeDebris?.(debris)
       removeDebrisFromScene(scene, debris)
 
-      const newDebris = createDebris(planetRadius)
-      console.log('New debris spawned after burn', {
-        newSize: newDebris.userData?.size,
-        previousSize: debris.userData.size,
-      })
-      newDebris.userData.captureProgress = 0
-      scene.add(newDebris)
-
-      if (newDebris.userData.guideLine) {
-        scene.add(newDebris.userData.guideLine)
-      }
-
-      return newDebris
+      return null
     }
   }
 

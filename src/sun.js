@@ -1,7 +1,20 @@
 import * as THREE from 'three'
 
+function isSafariLikeBrowser() {
+  if (typeof navigator === 'undefined') return false
+
+  const ua = navigator.userAgent || ''
+  const vendor = navigator.vendor || ''
+  const isAppleVendor = /Apple/i.test(vendor)
+  const isSafariEngine = /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Edg|FxiOS|Firefox/i.test(ua)
+  const isIOSWebKit = /iPhone|iPad|iPod/i.test(ua)
+
+  return isSafariEngine || (isAppleVendor && isIOSWebKit)
+}
+
 export function createSun(scene) {
   const sun = new THREE.Group()
+  const safariSafeMode = isSafariLikeBrowser()
 
   // Place the visual sun far away so it reads like a distant light source.
   sun.position.set(520, 180, -420)
@@ -40,12 +53,14 @@ export function createSun(scene) {
     new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.55,
+      opacity: safariSafeMode ? 0.42 : 0.55,
       depthWrite: false,
+      depthTest: true,
       toneMapped: false,
     })
   )
   glow.frustumCulled = false
+  glow.renderOrder = 996
   sun.add(glow)
 
   // Secondary larger glow for a softer animated corona.
@@ -54,24 +69,27 @@ export function createSun(scene) {
     new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.35,
+      opacity: safariSafeMode ? 0.16 : 0.35,
       depthWrite: false,
+      depthTest: true,
       toneMapped: false,
     })
   )
   outerGlow.frustumCulled = false
+  outerGlow.renderOrder = 997
+  outerGlow.visible = true
   const backGlowMap = createRadialGlowTexture()
   const backGlowMaterial = new THREE.SpriteMaterial({
     map: backGlowMap,
     color: 0xffffff,
     transparent: true,
-    opacity: 0.55,
+    opacity: safariSafeMode ? 0.5 : 0.55,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     toneMapped: false,
   })
   const backGlow = new THREE.Sprite(backGlowMaterial)
-  backGlow.scale.set(360, 360, 1)
+  backGlow.scale.set(safariSafeMode ? 320 : 360, safariSafeMode ? 320 : 360, 1)
   backGlow.position.set(0, 0, 0)
   backGlow.frustumCulled = false
   backGlow.renderOrder = 1000
@@ -80,16 +98,17 @@ export function createSun(scene) {
     map: backGlowMap,
     color: 0xffffff,
     transparent: true,
-    opacity: 0.48,
+    opacity: safariSafeMode ? 0.0 : 0.48,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     toneMapped: false,
   })
   const farBackGlow = new THREE.Sprite(farBackGlowMaterial)
-  farBackGlow.scale.set(900, 900, 1)
+  farBackGlow.scale.set(safariSafeMode ? 520 : 900, safariSafeMode ? 520 : 900, 1)
   farBackGlow.position.set(0, 0, 0)
   farBackGlow.frustumCulled = false
   farBackGlow.renderOrder = 999
+  farBackGlow.visible = !safariSafeMode
 
   sun.add(outerGlow)
   sun.add(backGlow)
@@ -101,15 +120,16 @@ export function createSun(scene) {
     transparent: true,
     opacity: 0.0,
     depthWrite: false,
-    depthTest: false,
+    depthTest: true,
     toneMapped: false,
   })
 
   const glare = new THREE.Sprite(glareMaterial)
-  glare.scale.set(1500, 1500, 1)
+  glare.scale.set(safariSafeMode ? 700 : 1500, safariSafeMode ? 700 : 1500, 1)
   glare.position.set(0, 0, 0)
   glare.frustumCulled = false
   glare.renderOrder = 1001
+  glare.visible = !safariSafeMode
 
   sun.add(glare)
 
@@ -122,6 +142,11 @@ export function createSun(scene) {
   sun.userData.farBackGlow = farBackGlow
   sun.userData.glare = glare
   sun.userData.time = 0
+  sun.userData.safariSafeMode = safariSafeMode
+  sun.userData._worldPos = new THREE.Vector3()
+  sun.userData._sunWorldPos = new THREE.Vector3()
+  sun.userData._toSun = new THREE.Vector3()
+  sun.userData._forward = new THREE.Vector3()
 
   scene.add(sun)
 
@@ -188,43 +213,60 @@ export function updateSun(sun, dt, camera = null) {
 
   if (sun.userData.glow) {
     sun.userData.glow.scale.setScalar(pulseA * 1.18)
-    sun.userData.glow.material.opacity = 0.6 + Math.sin(t * 1.7) * 0.1
+    const glowBaseOpacity = sun.userData.safariSafeMode ? 0.42 : 0.6
+    const glowPulseOpacity = sun.userData.safariSafeMode ? 0.05 : 0.1
+    sun.userData.glow.material.opacity = glowBaseOpacity + Math.sin(t * 1.7) * glowPulseOpacity
   }
 
   if (sun.userData.outerGlow) {
-    sun.userData.outerGlow.scale.setScalar(pulseB * 1.22)
-    sun.userData.outerGlow.material.opacity = 0.34 + Math.sin(t * 1.1 + 0.7) * 0.07
+    const outerGlowBaseScale = sun.userData.safariSafeMode ? 1.16 : 1.22
+    sun.userData.outerGlow.scale.setScalar(pulseB * outerGlowBaseScale)
+    if (sun.userData.safariSafeMode) {
+      sun.userData.outerGlow.material.opacity = 0.16 + Math.sin(t * 1.1 + 0.7) * 0.03
+    } else {
+      sun.userData.outerGlow.material.opacity = 0.34 + Math.sin(t * 1.1 + 0.7) * 0.07
+    }
   }
 
   if (sun.userData.backGlow) {
-    const spritePulse = 1 + Math.sin(t * 0.95 + 0.4) * 0.1
-    sun.userData.backGlow.scale.set(360 * spritePulse, 360 * spritePulse, 1)
-    sun.userData.backGlow.material.opacity = 0.78 + Math.sin(t * 1.2) * 0.12
+    const baseBackGlowScale = sun.userData.safariSafeMode ? 320 : 360
+    const spritePulseAmount = sun.userData.safariSafeMode ? 0.05 : 0.1
+    const backGlowBaseOpacity = sun.userData.safariSafeMode ? 0.62 : 0.78
+    const backGlowPulseOpacity = sun.userData.safariSafeMode ? 0.06 : 0.12
+    const spritePulse = 1 + Math.sin(t * 0.95 + 0.4) * spritePulseAmount
+    sun.userData.backGlow.scale.set(baseBackGlowScale * spritePulse, baseBackGlowScale * spritePulse, 1)
+    sun.userData.backGlow.material.opacity = backGlowBaseOpacity + Math.sin(t * 1.2) * backGlowPulseOpacity
   }
 
   if (sun.userData.farBackGlow) {
-    const farPulse = 1 + Math.sin(t * 0.55 + 1.1) * 0.12
-    sun.userData.farBackGlow.scale.set(900 * farPulse, 900 * farPulse, 1)
-    sun.userData.farBackGlow.material.opacity = 0.56 + Math.sin(t * 0.8 + 0.2) * 0.08
+    if (!sun.userData.safariSafeMode) {
+      const farPulse = 1 + Math.sin(t * 0.55 + 1.1) * 0.12
+      sun.userData.farBackGlow.scale.set(900 * farPulse, 900 * farPulse, 1)
+      sun.userData.farBackGlow.material.opacity = 0.56 + Math.sin(t * 0.8 + 0.2) * 0.08
+    }
   }
 
   if (sun.userData.glare && camera) {
-    const glarePulse = 1 + Math.sin(t * 0.6) * 0.1
-    sun.userData.glare.scale.set(1200 * glarePulse, 1200 * glarePulse, 1)
+    const glareBaseScale = sun.userData.safariSafeMode ? 700 : 1200
+    const glarePulseAmount = sun.userData.safariSafeMode ? 0.03 : 0.1
+    const glarePulse = 1 + Math.sin(t * 0.6) * glarePulseAmount
+    sun.userData.glare.scale.set(glareBaseScale * glarePulse, glareBaseScale * glarePulse, 1)
 
     // Direction-based intensity (prevents pop-in)
-    const sunWorldPos = new THREE.Vector3()
-    sun.getWorldPosition(sunWorldPos)
+    const sunWorldPos = sun.userData._sunWorldPos
+    const toSun = sun.userData._toSun
+    const forward = sun.userData._forward
 
-    const toSun = sunWorldPos.clone().sub(camera.position).normalize()
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+    sun.getWorldPosition(sunWorldPos)
+    toSun.copy(sunWorldPos).sub(camera.position).normalize()
+    forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
 
     const alignment = Math.max(0, forward.dot(toSun))
 
     // Smooth ramp instead of pop
     const intensity = Math.pow(alignment, 2.2)
 
-    sun.userData.glare.material.opacity = intensity * 0.35
+    sun.userData.glare.material.opacity = sun.userData.safariSafeMode ? 0 : intensity * 0.35
   }
 
   if (sun.userData.pointLight) {
@@ -235,7 +277,7 @@ export function updateSun(sun, dt, camera = null) {
     sun.userData.light.intensity = 6.2 + Math.sin(t * 0.9) * 0.25
 
     // Keep the directional light aligned with the visual sun position.
-    const worldPos = new THREE.Vector3()
+    const worldPos = sun.userData._worldPos
     sun.getWorldPosition(worldPos)
     sun.userData.light.position.copy(worldPos)
   }

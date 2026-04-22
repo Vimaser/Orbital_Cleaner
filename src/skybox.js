@@ -1,5 +1,17 @@
 import * as THREE from 'three'
 
+function isSafariLikeBrowser() {
+  if (typeof navigator === 'undefined') return false
+
+  const ua = navigator.userAgent || ''
+  const vendor = navigator.vendor || ''
+  const isAppleVendor = /Apple/i.test(vendor)
+  const isSafariEngine = /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Edg|FxiOS|Firefox/i.test(ua)
+  const isIOSWebKit = /iPhone|iPad|iPod/i.test(ua)
+
+  return isSafariEngine || (isAppleVendor && isIOSWebKit)
+}
+
 const REAL_STARS = [
   { id: 'sirius', ra: 101.287, dec: -16.716, mag: -1.46 },
   { id: 'canopus', ra: 95.987, dec: -52.695, mag: -0.74 },
@@ -120,9 +132,11 @@ let constellationLines = null
 
 export function createSkybox(scene) {
   skybox = new THREE.Group()
+  const safariSafeMode = isSafariLikeBrowser()
+
   skybox.name = 'Skybox'
 
-  const starCount = 4500
+  const starCount = safariSafeMode ? 2600 : 4500
   const radius = 1000
   const positions = new Float32Array(starCount * 3)
   const colors = new Float32Array(starCount * 3)
@@ -169,12 +183,13 @@ export function createSkybox(scene) {
   const material = new THREE.PointsMaterial({
     color: 0xffffff,
     vertexColors: true,
-    size: 1,
+    size: safariSafeMode ? 0.85 : 1,
     sizeAttenuation: true,
     transparent: true,
-    opacity: 1.0,
+    opacity: safariSafeMode ? 0.72 : 1.0,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    depthTest: true,
+    blending: safariSafeMode ? THREE.NormalBlending : THREE.AdditiveBlending,
     toneMapped: false,
     fog: false,
   })
@@ -230,12 +245,13 @@ export function createSkybox(scene) {
   const brightMaterial = new THREE.PointsMaterial({
     color: 0xffffff,
     vertexColors: true,
-    size: 5.5,
+    size: safariSafeMode ? 4.2 : 5.5,
     sizeAttenuation: true,
     transparent: true,
-    opacity: 0.92,
+    opacity: safariSafeMode ? 0.68 : 0.92,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    depthTest: true,
+    blending: safariSafeMode ? THREE.NormalBlending : THREE.AdditiveBlending,
     toneMapped: false,
     fog: false,
   })
@@ -278,9 +294,10 @@ export function createSkybox(scene) {
   const lineMaterial = new THREE.LineBasicMaterial({
     color: 0xbfd6ff,
     transparent: true,
-    opacity: 0.12,
+    opacity: safariSafeMode ? 0.0 : 0.12,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    depthTest: true,
+    blending: safariSafeMode ? THREE.NormalBlending : THREE.AdditiveBlending,
     toneMapped: false,
     fog: false,
   })
@@ -288,9 +305,11 @@ export function createSkybox(scene) {
   constellationLines = new THREE.LineSegments(lineGeometry, lineMaterial)
   constellationLines.frustumCulled = false
   constellationLines.renderOrder = -998
+  constellationLines.visible = !safariSafeMode
   skybox.add(constellationLines)
 
   scene.add(skybox)
+  skybox.userData.safariSafeMode = safariSafeMode
 
   console.log('[Skybox] Starfield created:', starCount, 'real stars:', REAL_STARS.length, 'constellation links:', CONSTELLATION_LINES.length)
 }
@@ -309,15 +328,21 @@ export function updateSkybox(dt, camera = null) {
 
   const t = performance.now() * 0.001
 
+  const safariSafeMode = !!skybox.userData.safariSafeMode
+
   if (stars?.material) {
-    stars.material.opacity = 0.9 + Math.sin(t * 0.35) * 0.03
+    const baseOpacity = safariSafeMode ? 0.68 : 0.9
+    const pulseOpacity = safariSafeMode ? 0.015 : 0.03
+    stars.material.opacity = baseOpacity + Math.sin(t * 0.35) * pulseOpacity
   }
 
   if (brightStars?.material) {
-    brightStars.material.opacity = 0.84 + Math.sin(t * 0.7 + 0.6) * 0.06
+    const baseOpacity = safariSafeMode ? 0.62 : 0.84
+    const pulseOpacity = safariSafeMode ? 0.03 : 0.06
+    brightStars.material.opacity = baseOpacity + Math.sin(t * 0.7 + 0.6) * pulseOpacity
   }
 
-  if (constellationLines?.material) {
+  if (constellationLines?.material && !safariSafeMode) {
     constellationLines.material.opacity = 0.1 + Math.sin(t * 0.22 + 0.4) * 0.015
   }
 }

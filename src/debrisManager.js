@@ -197,11 +197,13 @@ export function updateDebrisManager({
     frameEvents.disposalEvents.push({
       reason: normalizedReason,
       size: debris?.userData?.size ?? null,
+      originalSize: debris?.userData?.originalSize ?? null,
+      terminalPayout: debris?.userData?.terminalPayout ?? null,
       attached: !!debris?.userData?.attached,
       cascadeCount: debris?.userData?.cascadeCount ?? 0,
     });
 
-    if (normalizedReason === "burned") {
+    if (normalizedReason === "burned" || normalizedReason === "burned_terminal") {
       frameEvents.burnedCount += 1;
     }
   };
