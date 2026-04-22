@@ -42,20 +42,49 @@ function injectStyles() {
       border: 2px solid rgba(120, 180, 220, 0.72);
       background: linear-gradient(180deg, rgba(6, 12, 20, 0.8), rgba(4, 9, 15, 0.9));
       box-shadow:
-        0 0 0 1px rgba(120, 180, 220, 0.28) inset,
-        0 0 28px rgba(50, 115, 168, 0.16),
-        0 18px 42px rgba(0, 0, 0, 0.36);
+        0 0 0 1px rgba(120, 180, 220, 0.22) inset,
+        0 0 20px rgba(50, 115, 168, 0.11),
+        0 16px 36px rgba(0, 0, 0, 0.34);
       backdrop-filter: blur(4px);
       border-radius: 16px;
       pointer-events: auto;
     }
 
     .oc-main-menu-kicker {
-      margin: 0 0 8px;
+      margin: 0 0 6px;
       font-size: 12px;
       letter-spacing: 0.42em;
       text-transform: uppercase;
       color: rgba(120, 190, 230, 0.88);
+    }
+
+    .oc-main-menu-brand-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .oc-main-menu-badge {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+      filter: drop-shadow(0 0 7px rgba(115, 220, 255, 0.16));
+      opacity: 0.9;
+    }
+
+    .oc-main-menu-logo {
+      display: block;
+      width: min(100%, 480px);
+      max-height: 164px;
+      margin: 0 auto 10px;
+      object-fit: contain;
+      filter:
+        drop-shadow(0 0 14px rgba(115, 220, 255, 0.18))
+        drop-shadow(0 0 26px rgba(68, 142, 200, 0.08));
+      user-select: none;
+      pointer-events: none;
     }
 
     .oc-main-menu-title {
@@ -74,7 +103,7 @@ function injectStyles() {
     }
 
     .oc-main-menu-subtitle {
-      margin: 10px 0 26px;
+      margin: 8px 0 24px;
       text-align: center;
       font-size: 13px;
       letter-spacing: 0.24em;
@@ -145,6 +174,16 @@ function injectStyles() {
 
       .oc-main-menu-title {
         font-size: clamp(28px, 10vw, 42px);
+      }
+
+      .oc-main-menu-logo {
+        max-height: 108px;
+        margin-bottom: 8px;
+      }
+
+      .oc-main-menu-badge {
+        width: 24px;
+        height: 24px;
       }
 
       .oc-main-menu-subtitle {
@@ -250,15 +289,35 @@ export function createMainMenu(options = {}) {
 
   const kicker = document.createElement("p");
   kicker.className = "oc-main-menu-kicker";
-  kicker.textContent = "Low Orbit Sanitation Division";
+  kicker.textContent = options.kickerText || "Low Orbit Sanitation Division";
+
+  const brandRow = document.createElement("div");
+  brandRow.className = "oc-main-menu-brand-row";
+
+  let badge = null;
+  if (options.badgeSrc) {
+    badge = document.createElement("img");
+    badge.className = "oc-main-menu-badge";
+    badge.src = options.badgeSrc;
+    badge.alt = options.badgeAlt || "Orbital Cleaner badge";
+    brandRow.appendChild(badge);
+  }
+
+  let logo = null;
+  if (options.logoSrc) {
+    logo = document.createElement("img");
+    logo.className = "oc-main-menu-logo";
+    logo.src = options.logoSrc;
+    logo.alt = options.logoAlt || "Orbital Cleaner";
+  }
 
   const title = document.createElement("h1");
   title.className = "oc-main-menu-title";
-  title.textContent = "Orbital Cleaner";
+  title.textContent = options.titleText || "Orbital Cleaner";
 
   const subtitle = document.createElement("p");
   subtitle.className = "oc-main-menu-subtitle";
-  subtitle.textContent = "Return to shift and restore low orbit";
+  subtitle.textContent = options.subtitleText || "Return to shift and restore low orbit";
 
   const buttonList = document.createElement("div");
   buttonList.className = "oc-main-menu-button-list";
@@ -285,10 +344,20 @@ export function createMainMenu(options = {}) {
 
   const footer = document.createElement("div");
   footer.className = "oc-main-menu-footer";
-  footer.textContent = "Arrow Keys / W S Navigate   Enter Select";
+  footer.textContent = options.footerText || "Navigate: Arrows / W S   Select: Enter";
 
   panel.appendChild(kicker);
-  panel.appendChild(title);
+
+  if (badge) {
+    panel.appendChild(brandRow);
+  }
+
+  if (logo) {
+    panel.appendChild(logo);
+  } else {
+    panel.appendChild(title);
+  }
+
   panel.appendChild(subtitle);
   panel.appendChild(buttonList);
   panel.appendChild(footer);

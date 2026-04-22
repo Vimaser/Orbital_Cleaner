@@ -131,6 +131,7 @@ import {
   penalizeComboTimer,
 } from "./comboSystem.js";
 import { createMobileControls } from "./mobileControls.js";
+import { createInputSystem } from "./input.js";
 
 const { scene, camera, renderer } = createScene();
 
@@ -160,11 +161,23 @@ const SOUND_ASSETS = {
   ).href,
 };
 
+
 const MUSIC_ASSETS = {
   spaceAmbience: new URL("../assets/music/Space-Ambience.ogg", import.meta.url)
     .href,
   deepSpace: new URL(
     "../assets/music/Deep-Space-Atmosphere.ogg",
+    import.meta.url,
+  ).href,
+};
+
+const UI_ASSETS = {
+  menuLogo: new URL(
+    "../assets/ui/orbital-cleaner-logo.png",
+    import.meta.url,
+  ).href,
+  menuBadge: new URL(
+    "../assets/ui/orbital-cleaner-badge.png",
     import.meta.url,
   ).href,
 };
@@ -224,7 +237,9 @@ const forwardLookDistance = 14;
 const forwardDriftBlend = 0.06;
 
 const keys = {};
+const inputSystem = createInputSystem();
 const mobileControls = createMobileControls(keys);
+const controllerEdgeState = { enter: false, escape: false };
 const MISSION_FOCUS_ORDER = ["REPAIR", "DEBRIS", "OPEN"];
 
 const PRESSURE_CONFIG = {
@@ -255,7 +270,106 @@ const pauseState = {
 
 const appState = {
   started: false,
+  bootReady: false,
+  bootStartedAt: performance.now(),
 };
+const BOOT_MIN_DURATION_MS = 950;
+const BOOT_MESSAGE_INTERVAL_MS = 320;
+const BOOT_MESSAGES = [
+  "INITIALIZING SYSTEMS...",
+  "SYNCING ORBITAL DATA...",
+  "VERIFYING SHIFT STATUS...",
+  "LOADING SANITATION CONTRACTS...",
+];
+
+function createBootOverlay() {
+  const overlay = document.createElement("div");
+  overlay.id = "boot-overlay";
+  Object.assign(overlay.style, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "120",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "radial-gradient(circle at center, rgba(8, 16, 28, 0.92) 0%, rgba(3, 7, 14, 0.98) 72%)",
+    pointerEvents: "none",
+  });
+
+  const overlayPanel = document.createElement("div");
+  Object.assign(overlayPanel.style, {
+    minWidth: "340px",
+    maxWidth: "560px",
+    padding: "18px 22px",
+    border: "1px solid rgba(120, 220, 255, 0.35)",
+    borderRadius: "14px",
+    background: "rgba(6, 12, 20, 0.88)",
+    boxShadow: "0 0 0 1px rgba(90, 190, 255, 0.08) inset, 0 18px 40px rgba(0,0,0,0.45)",
+    color: "#d7f5ff",
+    fontFamily: '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace',
+    letterSpacing: "0.06em",
+  });
+
+  const title = document.createElement("div");
+  title.textContent = "ORBITAL CLEANER";
+  Object.assign(title.style, {
+    fontSize: "14px",
+    fontWeight: "700",
+    marginBottom: "10px",
+    color: "#8de8ff",
+  });
+
+  const message = document.createElement("div");
+  message.textContent = BOOT_MESSAGES[0];
+  Object.assign(message.style, {
+    fontSize: "13px",
+    fontWeight: "600",
+    color: "#f3fbff",
+  });
+
+  const subline = document.createElement("div");
+  subline.textContent = "LOW ORBIT SANITATION DIVISION";
+  Object.assign(subline.style, {
+    marginTop: "12px",
+    fontSize: "11px",
+    opacity: "0.78",
+    color: "#9ecedf",
+  });
+
+  overlayPanel.appendChild(title);
+  overlayPanel.appendChild(message);
+  overlayPanel.appendChild(subline);
+  overlay.appendChild(overlayPanel);
+  document.body.appendChild(overlay);
+
+  return { overlay, message };
+}
+
+const bootOverlay = createBootOverlay();
+
+function updateBootOverlay() {
+  const elapsed = performance.now() - appState.bootStartedAt;
+  const messageIndex = Math.min(
+    BOOT_MESSAGES.length - 1,
+    Math.floor(elapsed / BOOT_MESSAGE_INTERVAL_MS),
+  );
+
+  bootOverlay.message.textContent = BOOT_MESSAGES[messageIndex];
+}
+
+function finishBootSequence() {
+  if (appState.bootReady) {
+    return;
+  }
+
+  appState.bootReady = true;
+  if (bootOverlay?.overlay) {
+    bootOverlay.overlay.style.display = "none";
+  }
+
+  showMainMenu();
+  setUIState(UI_STATE.MENU);
+}
 
 const audioState = {
   lowFuelVoicePlayed: false,
@@ -303,6 +417,33 @@ function handleMobilePauseRequest() {
   if (!shiftState.terminalOpen) {
     pauseState.paused = !pauseState.paused;
     setUIState(pauseState.paused ? UI_STATE.PAUSED : UI_STATE.GAME);
+  }
+}
+
+function handleConfirmRequest() {
+  if (!appState.started) {
+    return;
+  }
+
+  if (!shiftState.terminalOpen) {
+    return;
+  }
+
+  skipTerminalTypewriter();
+  stopLoop("terminal");
+
+  if (shiftState._justSkippedTyping) {
+    shiftState._justSkippedTyping = false;
+    return;
+  }
+
+  if (shiftState.terminalMode === "summary") {
+    setTerminalMode(shiftState, "upgrade");
+    shiftState.terminalData = buildUpgradeTerminalData(
+      buildUpgradeOptions(playerUpgrades),
+    );
+  } else {
+    closeShiftTerminalFlow();
   }
 }
 
@@ -395,22 +536,8 @@ window.addEventListener("keydown", (e) => {
     shiftState.terminalOpen &&
     (e.code === "Enter" || e.code === "NumpadEnter")
   ) {
-    skipTerminalTypewriter();
-    stopLoop("terminal");
-
-    if (shiftState._justSkippedTyping) {
-      shiftState._justSkippedTyping = false;
-      return;
-    }
-
-    if (shiftState.terminalMode === "summary") {
-      setTerminalMode(shiftState, "upgrade");
-      shiftState.terminalData = buildUpgradeTerminalData(
-        buildUpgradeOptions(playerUpgrades),
-      );
-    } else {
-      closeShiftTerminalFlow();
-    }
+    handleConfirmRequest();
+    return;
   }
 });
 
@@ -761,23 +888,29 @@ function showPlaceholderMenuPanel(label) {
 }
 
 createMainMenu({
+  logoSrc: UI_ASSETS.menuLogo,
+  logoAlt: "Orbital Cleaner",
+  badgeSrc: UI_ASSETS.menuBadge,
+  badgeAlt: "Orbital Cleaner badge",
+  kickerText: "Low Orbit Sanitation Division",
+  subtitleText: "Return to shift and restore low orbit",
+  footerText: "Arrow Keys / W S / Q E Navigate   Enter Select",
   onStart: startGameFromMainMenu,
   onSettings: () => showPlaceholderMenuPanel("Settings"),
   onCredits: () => showPlaceholderMenuPanel("Credits"),
 });
 
-showMainMenu();
 setUIState(UI_STATE.MENU);
 
 function updateThrottle(dt) {
-  if (keys["arrowup"]) {
+  if (keys["arrowup"] || keys["KeyE"] || keys["e"]) {
     playerState.throttlePercent = Math.min(
       maxThrottlePercent,
       playerState.throttlePercent + throttleStepPerSecond * dt,
     );
   }
 
-  if (keys["arrowdown"]) {
+  if (keys["arrowdown"] || keys["KeyQ"] || keys["q"]) {
     playerState.throttlePercent = Math.max(
       minThrottlePercent,
       playerState.throttlePercent - throttleStepPerSecond * dt,
@@ -835,12 +968,46 @@ function animate() {
 
   const dt = Math.min(clock.getDelta(), 0.05);
 
+  inputSystem.pollGamepad();
+  inputSystem.applyVirtualStateToKeys(keys);
+
+  const controllerVirtualState = inputSystem.virtualState;
+  const controllerEnterPressed =
+    !!controllerVirtualState.Enter && !controllerEdgeState.enter;
+  const controllerEscapePressed =
+    !!controllerVirtualState.Escape && !controllerEdgeState.escape;
+
+  controllerEdgeState.enter = !!controllerVirtualState.Enter;
+  controllerEdgeState.escape = !!controllerVirtualState.Escape;
+
+  if (!appState.bootReady) {
+    stopGameplayLoops();
+    updateBootOverlay();
+    drawUI(UI_STATE.MENU);
+    comboLastTimestamp = null;
+    renderer.render(scene, camera);
+
+    if (performance.now() - appState.bootStartedAt >= BOOT_MIN_DURATION_MS) {
+      finishBootSequence();
+    }
+
+    return;
+  }
+
   if (!appState.started) {
     stopGameplayLoops();
     drawUI(UI_STATE.MENU);
     comboLastTimestamp = null;
     renderer.render(scene, camera);
     return;
+  }
+
+  if (controllerEscapePressed) {
+    handleMobilePauseRequest();
+  }
+
+  if (controllerEnterPressed) {
+    handleConfirmRequest();
   }
 
   if (pauseState.paused) {
