@@ -83,7 +83,7 @@ export function createTrainingMenu() {
       video: section.video,
       activeSectionId: section.id,
       sections: getSections(),
-      footer: "LEFT / RIGHT: CHANGE TOPIC   ESC: BACK",
+      footer: "LEFT / RIGHT (ARROWS / STICK): CHANGE TOPIC   ENTER / A: SELECT   ESC / B: BACK",
     };
   }
 

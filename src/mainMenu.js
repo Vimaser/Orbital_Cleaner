@@ -328,6 +328,21 @@ function updateSelectedButton(nextIndex) {
   });
 }
 
+export function moveMenuSelection(delta = 0) {
+  if (!menuButtons.length) return;
+  updateSelectedButton(selectedIndex + Number(delta));
+}
+
+export function confirmMenuAction() {
+  triggerSelectedButton();
+}
+
+export function backMenuAction() {
+  if (currentMenuView === "settings") {
+    setMenuView("main");
+  }
+}
+
 function triggerSelectedButton(index = selectedIndex) {
   const buttonLabels = getCurrentButtonLabels();
   const label = buttonLabels[index];
@@ -389,15 +404,15 @@ function handleKeyDown(event) {
     return;
   }
 
-  if (event.key === "Escape" && currentMenuView === "settings") {
+  if (event.key === "Escape") {
     event.preventDefault();
-    setMenuView("main");
+    backMenuAction();
     return;
   }
 
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    triggerSelectedButton();
+    confirmMenuAction();
   }
 }
 

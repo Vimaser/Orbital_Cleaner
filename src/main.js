@@ -34,6 +34,8 @@ import {
   buildUpgradeTerminalData,
   skipTerminalTypewriter,
   isTerminalTypewriterComplete,
+  moveTerminalSelection,
+  confirmTerminalAction,
 } from "./terminalUi.js";
 import { updateScan as updateScanSystem, selectPrimaryDebris } from "./scan.js";
 import {
@@ -113,11 +115,20 @@ import {
   toggleMenuVisible,
   setRadioState,
 } from "./menuUI.js";
-import { createMainMenu, showMainMenu, hideMainMenu } from "./mainMenu.js";
+import {
+  createMainMenu,
+  showMainMenu,
+  hideMainMenu,
+  moveMenuSelection,
+  confirmMenuAction,
+  backMenuAction,
+  isMainMenuVisible,
+} from "./mainMenu.js";
 import { createTrainingMenu } from "./trainingMenu.js";
 import {
   loadSound,
   playSound,
+  playSoundIfIdle,
   startLoop,
   stopLoop,
   stopAllLoops,
@@ -152,6 +163,8 @@ const SOUND_ASSETS = {
   burn: new URL("../assets/sfx/burn.ogg", import.meta.url).href,
   boost: new URL("../assets/sfx/boost.ogg", import.meta.url).href,
   beep: new URL("../assets/sfx/beep.ogg", import.meta.url).href,
+  critHeat: new URL("../assets/sfx/critHeat.ogg", import.meta.url).href,
+  proxAlarm: new URL("../assets/sfx/proxAlarm.ogg", import.meta.url).href,
   lowFuelVoice: new URL("../assets/sfx/lowfuel_voice.ogg", import.meta.url)
     .href,
   netpay: new URL("../assets/sfx/netpay.ogg", import.meta.url).href,
@@ -193,6 +206,8 @@ loadSound("burnup", SOUND_ASSETS.burnup, { volume: 0.95 });
 loadSound("burn", SOUND_ASSETS.burn, { loop: true, volume: 0.26 });
 loadSound("boost", SOUND_ASSETS.boost, { loop: true, volume: 0.5 });
 loadSound("beep", SOUND_ASSETS.beep, { loop: true, volume: 0.62 });
+loadSound("critHeat", SOUND_ASSETS.critHeat, { volume: 0.72 });
+loadSound("proxAlarm", SOUND_ASSETS.proxAlarm, { volume: 0.62 });
 loadSound("lowFuelVoice", SOUND_ASSETS.lowFuelVoice, { volume: 0.78 });
 loadSound("netpay", SOUND_ASSETS.netpay, { volume: 0.7 });
 loadSound("netloss", SOUND_ASSETS.netloss, { volume: 0.7 });
@@ -243,7 +258,16 @@ const forwardDriftBlend = 0.06;
 const keys = {};
 const inputSystem = createInputSystem();
 const mobileControls = createMobileControls(keys);
-const controllerEdgeState = { enter: false, escape: false };
+const controllerEdgeState = {
+  enter: false,
+  escape: false,
+  pause: false,
+  up: false,
+  down: false,
+  left: false,
+  right: false,
+  mission: false,
+};
 
 const MISSION_FOCUS_ORDER = ["REPAIR", "DEBRIS", "OPEN"];
 
@@ -505,6 +529,10 @@ const BOOT_MESSAGES = [
   "LOADING SANITATION CONTRACTS...",
 ];
 
+const CRIT_HEAT_REPEAT_MS = 2750;
+const PROX_ALARM_REPEAT_MS = 2750;
+const SATELLITE_PROX_WARNING_DISTANCE = 1.8;
+
 function createBootOverlay() {
   const overlay = document.createElement("div");
   overlay.id = "boot-overlay";
@@ -600,9 +628,59 @@ const audioState = {
   lowFuelVoicePlayed: false,
 };
 
+const warningAudioState = {
+  wasCriticalHeat: false,
+  lastCritHeatSfxTime: 0,
+  inSatelliteProxZone: false,
+  lastSatelliteProxSfxTime: 0,
+};
+
 const terminalAudioState = {
   settlementCuePlayed: false,
 };
+
+function buildInteractiveSummaryTerminalData(summaryData) {
+  return {
+    ...summaryData,
+    onContinue: () => {
+      handleConfirmRequest();
+    },
+  };
+}
+
+function applyUpgradeFromTerminalOption(option) {
+  if (!option?.key) {
+    return;
+  }
+
+  const appliedUpgrade = tryApplyTerminalUpgrade({
+    key: String(option.key).toLowerCase(),
+    shiftState,
+    upgradeState: playerUpgrades,
+    playerConfig,
+    playerHeatState,
+    playerHeatConfig,
+    satellites,
+  });
+
+  if (appliedUpgrade) {
+    console.log("UPGRADE APPLIED", {
+      key: option.key,
+      appliedUpgrade,
+      playerUpgrades: { ...playerUpgrades },
+    });
+    closeShiftTerminalFlow();
+  }
+}
+
+function buildInteractiveUpgradeTerminalData(upgradeOptions) {
+  return {
+    ...buildUpgradeTerminalData(upgradeOptions),
+    onUpgradeSelect: option => {
+      applyUpgradeFromTerminalOption(option);
+    },
+  };
+}
 
 const comboPenaltyState = {
   atmospherePenaltyArmed: true,
@@ -664,7 +742,7 @@ function handleConfirmRequest() {
 
   if (shiftState.terminalMode === "summary") {
     setTerminalMode(shiftState, "upgrade");
-    shiftState.terminalData = buildUpgradeTerminalData(
+    shiftState.terminalData = buildInteractiveUpgradeTerminalData(
       buildUpgradeOptions(playerUpgrades),
     );
   } else {
@@ -979,6 +1057,24 @@ function triggerRespawnDelay() {
   respawnState.pending = true;
   playerState.velocity.set(0, 0, 0);
   stopGameplayLoops();
+  warningAudioState.wasCriticalHeat = false;
+  warningAudioState.lastCritHeatSfxTime = 0;
+  warningAudioState.inSatelliteProxZone = false;
+  warningAudioState.lastSatelliteProxSfxTime = 0;
+}
+function getClosestSatelliteDistance(player, satellites) {
+  let closestDistance = Infinity;
+
+  for (const satellite of satellites) {
+    if (!satellite?.position) continue;
+
+    const distance = player.position.distanceTo(satellite.position);
+    if (distance < closestDistance) {
+      closestDistance = distance;
+    }
+  }
+
+  return closestDistance;
 }
 
 function closeShiftTerminalFlow() {
@@ -1233,9 +1329,27 @@ function animate() {
     !!controllerVirtualState.Enter && !controllerEdgeState.enter;
   const controllerEscapePressed =
     !!controllerVirtualState.Escape && !controllerEdgeState.escape;
+  const controllerPausePressed =
+    !!controllerVirtualState.Pause && !controllerEdgeState.pause;
+  const controllerUpPressed =
+    !!controllerVirtualState.ArrowUp && !controllerEdgeState.up;
+  const controllerDownPressed =
+    !!controllerVirtualState.ArrowDown && !controllerEdgeState.down;
+  const controllerLeftPressed =
+    !!controllerVirtualState.ArrowLeft && !controllerEdgeState.left;
+  const controllerRightPressed =
+    !!controllerVirtualState.ArrowRight && !controllerEdgeState.right;
+  const controllerMissionPressed =
+    !!controllerVirtualState.KeyM && !controllerEdgeState.mission;
 
   controllerEdgeState.enter = !!controllerVirtualState.Enter;
   controllerEdgeState.escape = !!controllerVirtualState.Escape;
+  controllerEdgeState.pause = !!controllerVirtualState.Pause;
+  controllerEdgeState.up = !!controllerVirtualState.ArrowUp;
+  controllerEdgeState.down = !!controllerVirtualState.ArrowDown;
+  controllerEdgeState.left = !!controllerVirtualState.ArrowLeft;
+  controllerEdgeState.right = !!controllerVirtualState.ArrowRight;
+  controllerEdgeState.mission = !!controllerVirtualState.KeyM;
 
   if (!appState.bootReady) {
     stopGameplayLoops();
@@ -1252,6 +1366,50 @@ function animate() {
   }
 
   if (!appState.started) {
+    if (isTrainingOverlayVisible()) {
+      if (controllerEscapePressed) {
+        hideTrainingOverlay();
+      }
+
+      if (controllerUpPressed || controllerLeftPressed) {
+        trainingMenuController?.prev();
+        renderTrainingOverlay();
+      }
+
+      if (
+        controllerDownPressed ||
+        controllerRightPressed ||
+        controllerEnterPressed
+      ) {
+        trainingMenuController?.next();
+        renderTrainingOverlay();
+      }
+
+      stopGameplayLoops();
+      drawUI(UI_STATE.MENU);
+      comboLastTimestamp = null;
+      renderer.render(scene, camera);
+      return;
+    }
+
+    if (isMainMenuVisible()) {
+      if (controllerUpPressed) {
+        moveMenuSelection(-1);
+      }
+
+      if (controllerDownPressed) {
+        moveMenuSelection(1);
+      }
+
+      if (controllerEnterPressed) {
+        confirmMenuAction();
+      }
+
+      if (controllerEscapePressed) {
+        backMenuAction();
+      }
+    }
+
     stopGameplayLoops();
     drawUI(UI_STATE.MENU);
     comboLastTimestamp = null;
@@ -1259,15 +1417,71 @@ function animate() {
     return;
   }
 
-  if (controllerEscapePressed) {
+  if (isTrainingOverlayVisible()) {
+    if (controllerEscapePressed) {
+      hideTrainingOverlay();
+    }
+
+    if (controllerUpPressed || controllerLeftPressed) {
+      trainingMenuController?.prev();
+      renderTrainingOverlay();
+    }
+
+    if (controllerDownPressed || controllerRightPressed || controllerEnterPressed) {
+      trainingMenuController?.next();
+      renderTrainingOverlay();
+    }
+
+    stopGameplayLoops();
+    drawUI(UI_STATE.MENU);
+    comboLastTimestamp = null;
+    renderer.render(scene, camera);
+    return;
+  }
+
+  if (controllerPausePressed) {
     handleMobilePauseRequest();
   }
 
-  if (controllerEnterPressed) {
+  if (shiftState.terminalOpen) {
+    if (controllerUpPressed) {
+      moveTerminalSelection(-1);
+    }
+
+    if (controllerDownPressed) {
+      moveTerminalSelection(1);
+    }
+
+    if (controllerEnterPressed) {
+      confirmTerminalAction();
+    }
+  } else if (controllerEnterPressed) {
     handleConfirmRequest();
   }
 
+  if (controllerMissionPressed) {
+    cycleMissionFocus();
+  }
+
   const activeDebrisCount = getActiveDebrisCount(debrisManagerState);
+
+  if (pauseState.paused) {
+    // Render current frame but do not update game state
+    stopGameplayLoops();
+    drawUI(UI_STATE.PAUSED);
+    comboLastTimestamp = null;
+    renderer.render(scene, camera);
+    return;
+  }
+  if (shipMenuState.open) {
+    stopGameplayLoops();
+    drawUI(UI_STATE.GAME);
+    comboLastTimestamp = null;
+    renderer.render(scene, camera);
+    return;
+  }
+
+  // Kessler block moved
   console.log("ACTIVE DEBRIS COUNT:", activeDebrisCount);
   const totalSatelliteCount = satellites.length;
   const damagedSatelliteCount = satellites.reduce(
@@ -1302,22 +1516,6 @@ function animate() {
 
   const kesslerSpawnMultiplier = getKesslerSpawnMultiplier(kesslerSyndrome);
 
-  if (pauseState.paused) {
-    // Render current frame but do not update game state
-    stopGameplayLoops();
-    drawUI(UI_STATE.PAUSED);
-    comboLastTimestamp = null;
-    renderer.render(scene, camera);
-    return;
-  }
-  if (shipMenuState.open) {
-    stopGameplayLoops();
-    drawUI(UI_STATE.GAME);
-    comboLastTimestamp = null;
-    renderer.render(scene, camera);
-    return;
-  }
-
   drawUI(UI_STATE.GAME);
   let primaryDebris = resolvePrimaryDebris();
 
@@ -1343,7 +1541,7 @@ function animate() {
       summary.bonusPay = shiftBonusPay;
       summary.netPay =
         (summary.netPay ?? 0) - (damageReport.totalDamageCost ?? 0);
-      return summary;
+      return buildInteractiveSummaryTerminalData(summary);
     },
   });
 
@@ -1359,7 +1557,7 @@ function animate() {
       );
       const stipendApplied = tryApplyGovernmentStipend(playerAccount);
 
-      shiftState.terminalData = {
+      shiftState.terminalData = buildInteractiveSummaryTerminalData({
         ...shiftState.terminalData,
         settlementResult,
         stipendApplied,
@@ -1371,7 +1569,7 @@ function animate() {
           completedShifts: playerAccount.completedShifts,
           stipendAmount: playerAccount.stipendAmount,
         },
-      };
+      });
       if (
         !terminalAudioState.settlementCuePlayed &&
         shiftState.terminalMode === "summary" &&
@@ -2084,6 +2282,34 @@ function animate() {
     spawnSatelliteCrashEffect(scene, player.position.clone());
     triggerRespawnDelay();
   }
+
+  if (playerHeatState.critical && !warningAudioState.wasCriticalHeat) {
+    playSoundIfIdle("critHeat");
+    warningAudioState.lastCritHeatSfxTime = now;
+  } else if (
+    playerHeatState.critical &&
+    now - warningAudioState.lastCritHeatSfxTime >= CRIT_HEAT_REPEAT_MS
+  ) {
+    playSoundIfIdle("critHeat");
+    warningAudioState.lastCritHeatSfxTime = now;
+  }
+  warningAudioState.wasCriticalHeat = playerHeatState.critical;
+
+  const closestSatelliteDistance = getClosestSatelliteDistance(player, satellites);
+  const inSatelliteProxZone =
+    closestSatelliteDistance <= SATELLITE_PROX_WARNING_DISTANCE;
+
+  if (inSatelliteProxZone && !warningAudioState.inSatelliteProxZone) {
+    playSoundIfIdle("proxAlarm");
+    warningAudioState.lastSatelliteProxSfxTime = now;
+  } else if (
+    inSatelliteProxZone &&
+    now - warningAudioState.lastSatelliteProxSfxTime >= PROX_ALARM_REPEAT_MS
+  ) {
+    playSoundIfIdle("proxAlarm");
+    warningAudioState.lastSatelliteProxSfxTime = now;
+  }
+  warningAudioState.inSatelliteProxZone = inSatelliteProxZone;
 
   updateTrailSystem(trajectoryState, player.position, playerState.velocity);
   updateTrajectoryGuideSystem(

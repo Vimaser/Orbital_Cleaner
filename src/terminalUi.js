@@ -2,6 +2,10 @@ let terminalRoot = null;
 let terminalPanel = null;
 let terminalContent = null;
 let activeFooterLine = null;
+let terminalInteractionBound = false;
+let activeTerminalMode = "summary";
+let activeTerminalData = null;
+let selectedUpgradeIndex = 0;
 const TERMINAL_FOOTER_LINES = [
   "Thank you for your continued service.",
   "All deductions processed automatically.",
@@ -44,6 +48,191 @@ function formatDeductionLines(deductions) {
   );
 }
 
+function getUpgradeOptions(terminalData) {
+  return Array.isArray(terminalData?.upgradeOptions)
+    ? terminalData.upgradeOptions.slice(0, 3)
+    : DEFAULT_UPGRADE_OPTIONS;
+}
+
+function getSelectedUpgradeOption() {
+  const options = getUpgradeOptions(activeTerminalData);
+  return options[selectedUpgradeIndex] || options[0] || null;
+}
+
+export function moveTerminalSelection(delta = 0) {
+  if (activeTerminalMode !== "upgrade") {
+    return;
+  }
+
+  const options = getUpgradeOptions(activeTerminalData);
+  if (!options.length) {
+    return;
+  }
+
+  selectedUpgradeIndex =
+    (selectedUpgradeIndex + Number(delta) + options.length) % options.length;
+
+  if (terminalContent && activeTerminalData) {
+    renderUpgradeContent(activeTerminalData);
+  }
+}
+
+export function confirmTerminalAction() {
+  if (!activeTerminalData) {
+    return;
+  }
+
+  if (activeTerminalMode === "upgrade") {
+    const option = getSelectedUpgradeOption();
+    if (option && typeof activeTerminalData?.onUpgradeSelect === "function") {
+      activeTerminalData.onUpgradeSelect(option, selectedUpgradeIndex);
+    }
+    return;
+  }
+
+  if (!isTerminalTypewriterComplete()) {
+    skipTerminalTypewriter();
+    return;
+  }
+
+  if (typeof activeTerminalData?.onContinue === "function") {
+    activeTerminalData.onContinue();
+  }
+}
+
+function bindTerminalInteractions() {
+  if (terminalInteractionBound) {
+    return;
+  }
+
+  terminalInteractionBound = true;
+
+  window.addEventListener("keydown", event => {
+    if (!terminalRoot || terminalRoot.style.display !== "flex") {
+      return;
+    }
+
+    if (activeTerminalMode === "upgrade") {
+      const options = getUpgradeOptions(activeTerminalData);
+      if (!options.length) {
+        return;
+      }
+
+      if (
+        event.key === "ArrowUp" ||
+        event.key === "w" ||
+        event.key === "W"
+      ) {
+        event.preventDefault();
+        selectedUpgradeIndex =
+          (selectedUpgradeIndex - 1 + options.length) % options.length;
+        renderUpgradeContent(activeTerminalData);
+        return;
+      }
+
+      if (
+        event.key === "ArrowDown" ||
+        event.key === "s" ||
+        event.key === "S"
+      ) {
+        event.preventDefault();
+        selectedUpgradeIndex = (selectedUpgradeIndex + 1) % options.length;
+        renderUpgradeContent(activeTerminalData);
+        return;
+      }
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        confirmTerminalAction();
+        return;
+      }
+
+      return;
+    }
+
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      confirmTerminalAction();
+    }
+  });
+}
+
+function renderUpgradeContent(terminalData) {
+  const options = getUpgradeOptions(terminalData);
+  const introText = [
+    "ORBITAL SERVICE TERMINAL",
+    "UPGRADE ALLOCATION AVAILABLE",
+    "",
+    "SELECT ONE PERFORMANCE MODIFIER",
+    ...(activeFooterLine ? ["", activeFooterLine] : []),
+  ].join("\n");
+
+  terminalContent.innerHTML = "";
+
+  const intro = document.createElement("div");
+  intro.style.whiteSpace = "pre-wrap";
+  intro.textContent = introText;
+  terminalContent.appendChild(intro);
+
+  const optionList = document.createElement("div");
+  optionList.style.display = "flex";
+  optionList.style.flexDirection = "column";
+  optionList.style.gap = "10px";
+  optionList.style.marginTop = "18px";
+
+  options.forEach((option, index) => {
+    const key = option?.key || `${index + 1}`;
+    const label = option?.label || "UNNAMED UPGRADE";
+    const description = option?.description || "No description available.";
+    const isSelected = index === selectedUpgradeIndex;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.style.width = "100%";
+    button.style.textAlign = "left";
+    button.style.padding = "12px 14px";
+    button.style.border = isSelected
+      ? "1px solid rgba(140, 220, 255, 0.9)"
+      : "1px solid rgba(120, 180, 220, 0.32)";
+    button.style.background = isSelected
+      ? "rgba(18, 36, 56, 0.9)"
+      : "rgba(8, 16, 28, 0.82)";
+    button.style.color = "rgba(235, 245, 255, 0.96)";
+    button.style.fontFamily = "monospace";
+    button.style.fontSize = "14px";
+    button.style.lineHeight = "1.45";
+    button.style.cursor = "pointer";
+    button.style.boxShadow = isSelected
+      ? "0 0 0 1px rgba(120, 180, 220, 0.25) inset"
+      : "none";
+    button.innerHTML = `<div>[${key}] ${label}</div><div style="opacity:0.82; margin-top:4px;">${description}</div>`;
+
+    button.addEventListener("mouseenter", () => {
+      selectedUpgradeIndex = index;
+      renderUpgradeContent(terminalData);
+    });
+
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      selectedUpgradeIndex = index;
+      renderUpgradeContent(terminalData);
+      if (typeof terminalData?.onUpgradeSelect === "function") {
+        terminalData.onUpgradeSelect(option, index);
+      }
+    });
+
+    optionList.appendChild(button);
+  });
+
+  terminalContent.appendChild(optionList);
+
+  const footer = document.createElement("div");
+  footer.style.whiteSpace = "pre-wrap";
+  footer.style.marginTop = "18px";
+  footer.textContent = "CLICK OR PRESS [ENTER] TO APPLY SELECTED UPGRADE\nW/S, ARROWS, OR CONTROLLER TO CHANGE SELECTION";
+  terminalContent.appendChild(footer);
+}
+
 let typeTargetText = "";
 let typeDisplayedLength = 0;
 let typeLastUpdate = 0;
@@ -84,11 +273,18 @@ function ensureTerminalElements() {
   terminalPanel.style.maxHeight = "80vh";
   terminalPanel.style.overflowY = "auto";
   terminalPanel.style.pointerEvents = "auto";
+  terminalPanel.style.cursor = "pointer";
 
   terminalContent = document.createElement("div");
   terminalPanel.appendChild(terminalContent);
   terminalRoot.appendChild(terminalPanel);
   document.body.appendChild(terminalRoot);
+
+  terminalPanel.addEventListener("click", () => {
+    confirmTerminalAction();
+  });
+
+  bindTerminalInteractions();
 
   return { terminalRoot, terminalPanel, terminalContent };
 }
@@ -187,6 +383,8 @@ export function drawTerminalUi(_hud, data) {
   if (!data) return;
 
   const { terminalOpen, terminalData, terminalMode = "summary" } = data;
+  activeTerminalMode = terminalMode;
+  activeTerminalData = terminalData;
   const { terminalRoot, terminalContent } = ensureTerminalElements();
 
   if (!terminalOpen || !terminalData) {
@@ -204,6 +402,16 @@ export function drawTerminalUi(_hud, data) {
   }
 
   terminalRoot.style.display = "flex";
+
+  if (terminalMode === "upgrade") {
+    const options = getUpgradeOptions(terminalData);
+    selectedUpgradeIndex = Math.max(
+      0,
+      Math.min(selectedUpgradeIndex, Math.max(0, options.length - 1)),
+    );
+    renderUpgradeContent(terminalData);
+    return;
+  }
 
   const fullText =
     terminalMode === "upgrade"
@@ -274,6 +482,9 @@ export function clearTerminalUi() {
   terminalRoot.style.display = "none";
   terminalContent.textContent = "";
   activeFooterLine = null;
+  activeTerminalMode = "summary";
+  activeTerminalData = null;
+  selectedUpgradeIndex = 0;
   typeTargetText = "";
   typeDisplayedLength = 0;
   typeLastUpdate = 0;

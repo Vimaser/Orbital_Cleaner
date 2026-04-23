@@ -1,6 +1,7 @@
 const sounds = {};
 const loops = {};
 const loopAudioRefs = {};
+const activeOneShots = {};
 
 let audioUnlocked = false;
 
@@ -36,6 +37,39 @@ export function playSound(name) {
   const sound = base.cloneNode();
   sound.volume = base.volume;
   sound.play().catch(() => {});
+}
+
+export function playSoundIfIdle(name) {
+  if (!audioUnlocked) return;
+
+  const base = sounds[name];
+  if (!base) return;
+
+  const active = activeOneShots[name];
+  if (active && !active.paused && !active.ended) {
+    return;
+  }
+
+  const sound = base.cloneNode();
+  sound.volume = base.volume;
+  activeOneShots[name] = sound;
+
+  const clearActive = () => {
+    if (activeOneShots[name] === sound) {
+      delete activeOneShots[name];
+    }
+  };
+
+  sound.addEventListener("ended", clearActive, { once: true });
+  sound.addEventListener("pause", () => {
+    if (sound.currentTime >= sound.duration || sound.ended) {
+      clearActive();
+    }
+  });
+
+  sound.play().catch(() => {
+    clearActive();
+  });
 }
 
 export function startLoop(name) {
@@ -85,6 +119,11 @@ export function setVolume(name, volume) {
   const activeLoop = loopAudioRefs[name];
   if (activeLoop) {
     activeLoop.volume = volume;
+  }
+
+  const activeOneShot = activeOneShots[name];
+  if (activeOneShot) {
+    activeOneShot.volume = volume;
   }
 }
 

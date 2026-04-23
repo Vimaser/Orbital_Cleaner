@@ -9,13 +9,18 @@ const gamepadBindings = {
   KeyW: { axis: 1, dir: -1 },
   KeyS: { axis: 1, dir: 1 },
   KeyA: { axis: 0, dir: -1 },
+
+  // Menu / training horizontal navigation via D-pad
+  ArrowLeft: { buttons: [14] },
+  ArrowRight: { buttons: [15] },
+
   KeyD: { axis: 0, dir: 1 },
 
   // Throttle via right stick vertical, with D-pad fallback
   ArrowUp: { axis: 3, dir: -1, buttons: [12] },
   ArrowDown: { axis: 3, dir: 1, buttons: [13] },
 
-  // Tracker mode toggle
+  // Tracker mode toggle (keyboard M, gamepad Y / Triangle)
   KeyM: { button: 3 },
 
   // Boost
@@ -26,8 +31,11 @@ const gamepadBindings = {
   // Confirm / interact / menu accept
   Enter: { button: 0 },
 
-  // Pause / menu
-  Escape: { button: 9 },
+  // Back / cancel in menus (Circle / B)
+  Escape: { buttons: [1] },
+
+  // Pause / start button during gameplay
+  Pause: { button: 9 },
 };
 
 function normalizeKeyName(codeOrKey) {
@@ -251,12 +259,24 @@ export function applyVirtualStateToKeys(keys) {
       keys.arrowdown = !!value;
     }
 
+    if (code === "ArrowLeft") {
+      keys.arrowleft = !!value;
+    }
+
+    if (code === "ArrowRight") {
+      keys.arrowright = !!value;
+    }
+
     if (code === "Enter") {
       keys.enter = !!value;
     }
 
     if (code === "Escape") {
       keys.escape = !!value;
+    }
+
+    if (code === "Pause") {
+      keys.pause = !!value;
     }
   }
 }
@@ -284,4 +304,4 @@ export function createInputSystem(target = window) {
       }
     },
   };
-}
+};
