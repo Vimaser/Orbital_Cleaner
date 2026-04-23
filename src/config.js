@@ -34,8 +34,8 @@ export const CONFIG = {
     repairAlignment: 0.8,
 
     // Rebreak timing (ms)
-    rebreakMinMs: 30000,
-    rebreakMaxMs: 180000,
+    rebreakMinMs: 60000,
+    rebreakMaxMs: 300000,
 
     // Burst effects (ms)
     repairBurstMs: 450,

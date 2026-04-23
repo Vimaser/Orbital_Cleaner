@@ -5,9 +5,42 @@ import { updateDebrisController } from "./debrisController.js";
 export const DEBRIS_MANAGER_TUNING = {
   initialDebrisCount: 2,
   maxDebris: 3,
+  maxKesslerBonusDebris: 7,
   respawnDelay: 6,
+  minRespawnDelay: 2.8,
+  crowdingSpawnPenaltyMax: 1.35,
   testSpawnDistance: 6,
 };
+
+function getEffectiveMaxDebris(kesslerSpawnMultiplier = 1) {
+  const safeSpawnMultiplier = Math.max(1, Number(kesslerSpawnMultiplier) || 1);
+  const normalizedPressure = Math.min(1, (safeSpawnMultiplier - 1) / 1.5);
+  const softenedPressure = Math.pow(normalizedPressure, 1.15);
+  const bonusDebris = Math.floor(
+    softenedPressure * DEBRIS_MANAGER_TUNING.maxKesslerBonusDebris,
+  );
+
+  return DEBRIS_MANAGER_TUNING.maxDebris + bonusDebris;
+}
+
+function getAdjustedRespawnDelay({
+  currentDebrisCount,
+  effectiveMaxDebris,
+  kesslerSpawnMultiplier = 1,
+}) {
+  const safeSpawnMultiplier = Math.max(1, Number(kesslerSpawnMultiplier) || 1);
+  const easedSpawnMultiplier = Math.pow(safeSpawnMultiplier, 0.7);
+  const occupancyRatio = effectiveMaxDebris > 0
+    ? Math.min(1, currentDebrisCount / effectiveMaxDebris)
+    : 0;
+  const crowdingPenalty =
+    1 + occupancyRatio * occupancyRatio * DEBRIS_MANAGER_TUNING.crowdingSpawnPenaltyMax;
+
+  const adjustedDelay =
+    (DEBRIS_MANAGER_TUNING.respawnDelay / easedSpawnMultiplier) * crowdingPenalty;
+
+  return Math.max(DEBRIS_MANAGER_TUNING.minRespawnDelay, adjustedDelay);
+}
 
 function addDebrisToScene(scene, debris) {
   if (!debris) return;
@@ -48,13 +81,16 @@ export function spawnDebrisIntoManager({
   managerState,
   scene,
   planetRadius,
+  kesslerSpawnMultiplier = 1,
   options = {},
 }) {
   if (!managerState || !scene) {
     return null;
   }
 
-  if (managerState.debrisList.length >= DEBRIS_MANAGER_TUNING.maxDebris) {
+  const effectiveMaxDebris = getEffectiveMaxDebris(kesslerSpawnMultiplier);
+
+  if (managerState.debrisList.length >= effectiveMaxDebris) {
     return null;
   }
 
@@ -169,6 +205,7 @@ export function updateDebrisManager({
   playerState,
   planetRadius,
   dt,
+  kesslerSpawnMultiplier = 1,
   attachDebris,
   disposeDebris,
   updateDebrisStability,
@@ -228,6 +265,7 @@ export function updateDebrisManager({
       playerState,
       planetRadius,
       dt,
+      kesslerSpawnMultiplier,
       createDebris,
       attachDebris,
       disposeDebris,
@@ -276,14 +314,22 @@ export function updateDebrisManager({
 
   managerState.debrisList = nextDebrisList;
 
-  if (managerState.debrisList.length < DEBRIS_MANAGER_TUNING.maxDebris) {
+  const effectiveMaxDebris = getEffectiveMaxDebris(kesslerSpawnMultiplier);
+  const adjustedRespawnDelay = getAdjustedRespawnDelay({
+    currentDebrisCount: managerState.debrisList.length,
+    effectiveMaxDebris,
+    kesslerSpawnMultiplier,
+  });
+
+  if (managerState.debrisList.length < effectiveMaxDebris) {
     managerState.spawnTimer += dt;
 
-    if (managerState.spawnTimer >= DEBRIS_MANAGER_TUNING.respawnDelay) {
+    if (managerState.spawnTimer >= adjustedRespawnDelay) {
       spawnDebrisIntoManager({
         managerState,
         scene,
         planetRadius,
+        kesslerSpawnMultiplier,
       });
       managerState.spawnTimer = 0;
     }

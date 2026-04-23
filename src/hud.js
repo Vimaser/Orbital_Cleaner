@@ -1019,6 +1019,110 @@ export function drawOrbitalHud(hud, data) {
   }
 }
 
+function getKesslerDisplayState(kesslerState) {
+  const pressure = THREE.MathUtils.clamp(kesslerState?.pressure ?? 0, 0, 1);
+  const meter = THREE.MathUtils.clamp(kesslerState?.meter ?? 0, 0, 100);
+
+  if (pressure >= 0.9) {
+    return {
+      label: "RUNAWAY",
+      color: "rgba(255, 95, 95, 0.98)",
+      glow: "rgba(255, 95, 95, 0.42)",
+      meter,
+      pressure,
+    };
+  }
+
+  if (pressure >= 0.7) {
+    return {
+      label: "IMMINENT",
+      color: "rgba(255, 138, 92, 0.98)",
+      glow: "rgba(255, 138, 92, 0.34)",
+      meter,
+      pressure,
+    };
+  }
+
+  if (pressure >= 0.5) {
+    return {
+      label: "CRITICAL",
+      color: "rgba(255, 178, 92, 0.98)",
+      glow: "rgba(255, 178, 92, 0.28)",
+      meter,
+      pressure,
+    };
+  }
+
+  if (pressure >= 0.3) {
+    return {
+      label: "UNSTABLE",
+      color: "rgba(255, 220, 120, 0.96)",
+      glow: "rgba(255, 220, 120, 0.24)",
+      meter,
+      pressure,
+    };
+  }
+
+  if (pressure >= 0.12) {
+    return {
+      label: "ELEVATED",
+      color: "rgba(200, 255, 140, 0.94)",
+      glow: "rgba(200, 255, 140, 0.18)",
+      meter,
+      pressure,
+    };
+  }
+
+  return {
+    label: "STABLE",
+    color: "rgba(120,255,120,0.95)",
+    glow: "rgba(120,255,120,0.16)",
+    meter,
+    pressure,
+  };
+}
+
+function drawKesslerMeter(ctx, kesslerState) {
+  if (!kesslerState) return;
+
+  const displayState = getKesslerDisplayState(kesslerState);
+  const meterX = 18;
+  const meterY = 44;
+  const meterW = 120;
+  const meterH = 9;
+  const segments = 10;
+  const gap = 2;
+  const innerW = meterW - (segments - 1) * gap;
+  const segmentW = innerW / segments;
+  const filledSegments = Math.round(displayState.pressure * segments);
+
+  ctx.fillStyle = "rgba(6, 18, 12, 0.88)";
+  ctx.fillRect(meterX, meterY, meterW, meterH);
+
+  ctx.strokeStyle = displayState.color;
+  ctx.lineWidth = 1.2;
+  ctx.strokeRect(meterX, meterY, meterW, meterH);
+
+  for (let i = 0; i < segments; i++) {
+    const x = meterX + i * (segmentW + gap);
+    const isFilled = i < filledSegments;
+
+    ctx.fillStyle = isFilled
+      ? displayState.color
+      : "rgba(24, 54, 30, 0.72)";
+    ctx.fillRect(x, meterY + 1, segmentW, meterH - 2);
+  }
+
+  ctx.fillStyle = "rgba(200,255,200,0.9)";
+  ctx.font = "12px monospace";
+  ctx.fillText("KESSLER", meterX, 38);
+
+  ctx.textAlign = "right";
+  ctx.fillStyle = displayState.color;
+  ctx.fillText(displayState.label, meterX + meterW, 38);
+  ctx.textAlign = "left";
+}
+
 export function drawRadar(hud, data) {
   const { radarCanvas, radarCtx } = hud;
   const {
@@ -1030,6 +1134,7 @@ export function drawRadar(hud, data) {
     debrisList = [],
     scanRadius,
     fuelState,
+    kesslerState,
   } = data;
 
   const ctx = radarCtx;
@@ -1134,7 +1239,7 @@ export function drawRadar(hud, data) {
       1,
     );
     const fuelBarX = 18;
-    const fuelBarY = 24;
+    const fuelBarY = 18;
     const fuelBarW = 120;
     const fuelBarH = 10;
 
@@ -1157,8 +1262,12 @@ export function drawRadar(hud, data) {
     ctx.fillText(`FUEL ${Math.round(fuelPct * 100)}%`, fuelBarX, 18);
   }
 
+  if (kesslerState) {
+    drawKesslerMeter(ctx, kesslerState);
+  }
+
   ctx.fillStyle = "rgba(200,255,200,0.9)";
   ctx.font = "12px monospace";
-  ctx.fillText("RADAR SCAN", 18, 56);
+  ctx.fillText("RADAR SCAN", 18, 74);
   ctx.fillText("AUTO SCAN ACTIVE", 18, h - 16);
 }

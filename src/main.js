@@ -132,6 +132,13 @@ import {
 } from "./comboSystem.js";
 import { createMobileControls } from "./mobileControls.js";
 import { createInputSystem } from "./input.js";
+import {
+  createKesslerSyndrome,
+  updateKesslerSyndrome,
+  getKesslerSpawnMultiplier,
+  applyKesslerImpulse,
+  getKesslerUIState,
+} from "./kesslerSyndrome.js";
 
 const { scene, camera, renderer } = createScene();
 
@@ -161,7 +168,6 @@ const SOUND_ASSETS = {
   ).href,
 };
 
-
 const MUSIC_ASSETS = {
   spaceAmbience: new URL("../assets/music/Space-Ambience.ogg", import.meta.url)
     .href,
@@ -172,14 +178,10 @@ const MUSIC_ASSETS = {
 };
 
 const UI_ASSETS = {
-  menuLogo: new URL(
-    "../assets/ui/orbital-cleaner-logo.png",
-    import.meta.url,
-  ).href,
-  menuBadge: new URL(
-    "../assets/ui/orbital-cleaner-badge.png",
-    import.meta.url,
-  ).href,
+  menuLogo: new URL("../assets/ui/orbital-cleaner-logo.png", import.meta.url)
+    .href,
+  menuBadge: new URL("../assets/ui/orbital-cleaner-badge.png", import.meta.url)
+    .href,
 };
 
 loadSound("repair", SOUND_ASSETS.repair, { volume: 0.72 });
@@ -268,6 +270,8 @@ const pauseState = {
   paused: false,
 };
 
+const kesslerSyndrome = createKesslerSyndrome();
+
 const appState = {
   started: false,
   bootReady: false,
@@ -292,7 +296,8 @@ function createBootOverlay() {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "radial-gradient(circle at center, rgba(8, 16, 28, 0.92) 0%, rgba(3, 7, 14, 0.98) 72%)",
+    background:
+      "radial-gradient(circle at center, rgba(8, 16, 28, 0.92) 0%, rgba(3, 7, 14, 0.98) 72%)",
     pointerEvents: "none",
   });
 
@@ -304,7 +309,8 @@ function createBootOverlay() {
     border: "1px solid rgba(120, 220, 255, 0.35)",
     borderRadius: "14px",
     background: "rgba(6, 12, 20, 0.88)",
-    boxShadow: "0 0 0 1px rgba(90, 190, 255, 0.08) inset, 0 18px 40px rgba(0,0,0,0.45)",
+    boxShadow:
+      "0 0 0 1px rgba(90, 190, 255, 0.08) inset, 0 18px 40px rgba(0,0,0,0.45)",
     color: "#d7f5ff",
     fontFamily: '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace',
     letterSpacing: "0.06em",
@@ -1010,6 +1016,28 @@ function animate() {
     handleConfirmRequest();
   }
 
+  const activeDebrisCount = getActiveDebrisCount(debrisManagerState);
+  console.log("ACTIVE DEBRIS COUNT:", activeDebrisCount);
+  const totalSatelliteCount = satellites.length;
+  const damagedSatelliteCount = satellites.reduce(
+    (count, satellite) => count + (satellite?.userData?.damaged ? 1 : 0),
+    0,
+  );
+  const functionalSatelliteCount = Math.max(
+    0,
+    totalSatelliteCount - damagedSatelliteCount,
+  );
+
+  updateKesslerSyndrome(kesslerSyndrome, {
+    functionalSatellites: functionalSatelliteCount,
+    totalSatellites: totalSatelliteCount,
+    unrepairedSatellites: damagedSatelliteCount,
+    activeDebrisCount,
+    dt,
+  });
+
+  const kesslerSpawnMultiplier = getKesslerSpawnMultiplier(kesslerSyndrome);
+
   if (pauseState.paused) {
     // Render current frame but do not update game state
     stopGameplayLoops();
@@ -1130,6 +1158,7 @@ function animate() {
       debrisList: debrisManagerState.debrisList,
       scanRadius,
       fuelState,
+      kesslerState: getKesslerUIState(kesslerSyndrome),
     });
     drawTerminalUi(hud, {
       terminalOpen: shiftState.terminalOpen,
@@ -1166,6 +1195,7 @@ function animate() {
       playerState,
       planetRadius,
       dt,
+      kesslerSpawnMultiplier,
       attachDebris,
       disposeDebris,
       updateDebrisStability,
@@ -1242,6 +1272,7 @@ function animate() {
       debrisList: debrisManagerState.debrisList,
       scanRadius,
       fuelState,
+      kesslerState: getKesslerUIState(kesslerSyndrome),
     });
     updateEvaSystem(evaSystem, dt);
     updateFloatingTexts(dt);
@@ -1338,6 +1369,12 @@ function animate() {
   const burnedUpInAtmosphere = updatePlayerHeat(dt);
   if (burnedUpInAtmosphere) {
     registerCrash(damageState);
+    applyKesslerImpulse(kesslerSyndrome, 1.25);
+    console.log("CRASH EVENT (ATMOSPHERE)", {
+      activeDebrisCount,
+      kesslerSpawnMultiplier,
+      reason: "burnup",
+    });
     resetComboSystem();
     comboPenaltyState.atmospherePenaltyArmed = true;
     comboPenaltyState.repairMissPenaltyArmed = true;
@@ -1361,12 +1398,6 @@ function animate() {
   updateStation(station, dt);
 
   updateSatellites(satellites, dt, primaryDebris);
-
-  const activeDebrisCount = getActiveDebrisCount(debrisManagerState);
-  const damagedSatelliteCount = satellites.reduce(
-    (count, satellite) => count + (satellite?.userData?.damaged ? 1 : 0),
-    0,
-  );
 
   orbitalRisk = THREE.MathUtils.clamp(
     orbitalRisk +
@@ -1619,6 +1650,7 @@ function animate() {
     playerState,
     planetRadius,
     dt,
+    kesslerSpawnMultiplier,
     attachDebris,
     disposeDebris,
     updateDebrisStability,
@@ -1662,7 +1694,8 @@ function animate() {
   const previousPrimaryDisposed =
     !!previousPrimaryDebris &&
     (!previousPrimaryDebris.parent || !previousPrimaryDebris.userData?.active);
-  const attachedTargetDisposedThisFrame = wasAttached && previousPrimaryDisposed;
+  const attachedTargetDisposedThisFrame =
+    wasAttached && previousPrimaryDisposed;
 
   if (attachedTargetDisposedThisFrame) {
     onEvaDebrisReleased(evaSystem);
@@ -1749,6 +1782,7 @@ function animate() {
         0,
         orbitalRisk - PRESSURE_CONFIG.debrisDisposeRiskReduction,
       );
+      applyKesslerImpulse(kesslerSyndrome, -0.75);
       console.log("DEBRIS BURN DISPOSAL", {
         score,
         size: burnEvent?.size || null,
@@ -1765,6 +1799,20 @@ function animate() {
   const hitSatellite = checkSatelliteCollisions(player, satellites);
   if (hitSatellite) {
     registerCrash(damageState);
+    applyKesslerImpulse(kesslerSyndrome, 2.75);
+    serviceBacklog = THREE.MathUtils.clamp(
+      serviceBacklog + 6,
+      0,
+      PRESSURE_CONFIG.maxValue,
+    );
+    if (hitSatellite?.userData) {
+      damageSatellite(hitSatellite, { source: "player_collision" });
+    }
+    console.log("CRASH EVENT (SATELLITE)", {
+      activeDebrisCount,
+      kesslerSpawnMultiplier,
+      reason: "collision",
+    });
     resetComboSystem();
     comboPenaltyState.atmospherePenaltyArmed = true;
     comboPenaltyState.repairMissPenaltyArmed = true;
@@ -1808,6 +1856,7 @@ function animate() {
     debrisList: debrisManagerState.debrisList,
     scanRadius,
     fuelState,
+    kesslerState: getKesslerUIState(kesslerSyndrome),
   });
 
   updateEvaSystem(evaSystem, dt);
