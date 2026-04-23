@@ -52,6 +52,7 @@ import {
   updateStationTerminalState,
   closeShiftTerminal,
   buildShiftSummary,
+  updateSessionRunContext,
 } from "./shiftSystem.js";
 import {
   setDebrisTracked,
@@ -113,6 +114,7 @@ import {
   setRadioState,
 } from "./menuUI.js";
 import { createMainMenu, showMainMenu, hideMainMenu } from "./mainMenu.js";
+import { createTrainingMenu } from "./trainingMenu.js";
 import {
   loadSound,
   playSound,
@@ -242,7 +244,41 @@ const keys = {};
 const inputSystem = createInputSystem();
 const mobileControls = createMobileControls(keys);
 const controllerEdgeState = { enter: false, escape: false };
+
 const MISSION_FOCUS_ORDER = ["REPAIR", "DEBRIS", "OPEN"];
+
+const DIFFICULTY_PRESETS = {
+  TRAINING_SHIFT: {
+    id: "TRAINING_SHIFT",
+    label: "Training Shift",
+    kessler: {
+      safeFunctionalThreshold: 1,
+    },
+  },
+  CERTIFIED: {
+    id: "CERTIFIED",
+    label: "Certified",
+    kessler: {
+      safeFunctionalThreshold: 2,
+    },
+  },
+  HAZARD_DUTY: {
+    id: "HAZARD_DUTY",
+    label: "Hazard Duty",
+    kessler: {
+      safeFunctionalThreshold: 3,
+    },
+  },
+  ZERO_TOLERANCE: {
+    id: "ZERO_TOLERANCE",
+    label: "Zero Tolerance",
+    kessler: {
+      safeFunctionalThreshold: (satellites) => satellites.length,
+    },
+  },
+};
+
+let activeDifficulty = DIFFICULTY_PRESETS.TRAINING_SHIFT;
 
 const PRESSURE_CONFIG = {
   orbitalRiskGainPerDebrisPerSecond: 2.2,
@@ -270,13 +306,196 @@ const pauseState = {
   paused: false,
 };
 
-const kesslerSyndrome = createKesslerSyndrome();
+const kesslerDifficultyConfig = {
+  ...activeDifficulty.kessler,
+};
+
+const kesslerSyndrome = createKesslerSyndrome(kesslerDifficultyConfig);
 
 const appState = {
   started: false,
   bootReady: false,
   bootStartedAt: performance.now(),
 };
+let trainingMenuController = null;
+let trainingOverlay = null;
+
+function isTrainingOverlayVisible() {
+  return !!trainingOverlay && trainingOverlay.style.display !== "none";
+}
+
+function ensureTrainingOverlay() {
+  if (trainingOverlay) {
+    return trainingOverlay;
+  }
+
+  const overlay = document.createElement("div");
+  overlay.id = "training-overlay";
+  Object.assign(overlay.style, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "180",
+    display: "none",
+    alignItems: "center",
+    justifyContent: "center",
+    background:
+      "radial-gradient(circle at center, rgba(8, 16, 28, 0.94) 0%, rgba(3, 7, 14, 0.985) 74%)",
+    padding: "28px",
+  });
+
+  const panel = document.createElement("div");
+  panel.id = "training-overlay-panel";
+  Object.assign(panel.style, {
+    width: "min(900px, 100%)",
+    minHeight: "520px",
+    borderRadius: "18px",
+    border: "1px solid rgba(120, 220, 255, 0.24)",
+    background: "rgba(6, 12, 20, 0.9)",
+    boxShadow:
+      "0 0 0 1px rgba(90, 190, 255, 0.08) inset, 0 24px 52px rgba(0,0,0,0.46)",
+    color: "#d7f5ff",
+    fontFamily: '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace',
+    padding: "26px 28px",
+    display: "grid",
+    gridTemplateColumns: "minmax(220px, 280px) 1fr",
+    gap: "24px",
+  });
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  trainingOverlay = overlay;
+  return overlay;
+}
+
+function renderTrainingOverlay() {
+  if (!trainingMenuController) {
+    trainingMenuController = createTrainingMenu();
+  }
+
+  const overlay = ensureTrainingOverlay();
+  const panel = overlay.querySelector("#training-overlay-panel");
+  const data = trainingMenuController.render();
+
+  const topicButtons = (data.sections || [])
+    .map((section) => {
+      const isActive = section.id === data.activeSectionId;
+      const border = isActive
+        ? "rgba(138, 222, 255, 0.82)"
+        : "rgba(106, 165, 206, 0.34)";
+      const background = isActive
+        ? "linear-gradient(180deg, rgba(16, 32, 48, 0.97), rgba(8, 17, 27, 0.98))"
+        : "linear-gradient(180deg, rgba(8, 16, 28, 0.94), rgba(6, 11, 18, 0.96))";
+      const color = isActive
+        ? "rgba(240, 250, 255, 0.98)"
+        : "rgba(225, 242, 255, 0.9)";
+      return `
+        <button
+          type="button"
+          data-training-topic="${section.id}"
+          style="
+            width: 100%;
+            text-align: left;
+            padding: 12px 14px;
+            border-radius: 12px;
+            border: 1px solid ${border};
+            background: ${background};
+            color: ${color};
+            font-family: inherit;
+            font-size: 14px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            cursor: pointer;
+          "
+        >${section.title}</button>
+      `;
+    })
+    .join("");
+
+  panel.innerHTML = `
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="font-size:22px; font-weight:700; letter-spacing:0.1em; color:#8de8ff;">
+        ${data.title}
+      </div>
+      <div style="font-size:12px; color:rgba(190, 222, 235, 0.82); letter-spacing:0.05em; line-height:1.5;">
+        ${data.subtitle}
+      </div>
+      <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px;">
+        ${topicButtons}
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; min-height:100%;">
+      <div style="font-size:24px; font-weight:700; letter-spacing:0.08em; color:#f3fbff; margin-bottom:12px;">
+        ${data.sectionTitle}
+      </div>
+      <div style="font-size:14px; color:rgba(214, 238, 245, 0.9); line-height:1.7; max-width:560px; margin-bottom:18px;">
+        ${data.description}
+      </div>
+      <div style="display:flex; align-items:flex-start; gap:18px; flex-wrap:wrap;">
+        <div style="width:min(320px, 100%); border:1px solid rgba(106, 165, 206, 0.38); border-radius:14px; background:rgba(6, 12, 20, 0.82); padding:10px; box-shadow:0 0 0 1px rgba(90, 190, 255, 0.06) inset;">
+          ${
+            data.video
+              ? `<video src="${data.video}" autoplay loop muted playsinline style="display:block; width:100%; border-radius:10px; background:#000;"></video>`
+              : `<div style="height:180px; display:flex; align-items:center; justify-content:center; color:rgba(190,222,235,0.7);">NO TRAINING CLIP</div>`
+          }
+        </div>
+        <div style="flex:1; min-width:220px; display:flex; flex-direction:column; gap:12px;">
+          <div style="font-size:12px; color:rgba(200,255,200,0.9); letter-spacing:0.05em; line-height:1.6;">
+            ${data.footer}
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:6px;">
+            <button type="button" data-training-nav="prev" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(106,165,206,0.34); background:rgba(8,16,28,0.94); color:rgba(225,242,255,0.92); font-family:inherit; cursor:pointer;">PREV</button>
+            <button type="button" data-training-nav="next" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(106,165,206,0.34); background:rgba(8,16,28,0.94); color:rgba(225,242,255,0.92); font-family:inherit; cursor:pointer;">NEXT</button>
+            <button type="button" data-training-nav="back" style="padding:10px 14px; border-radius:10px; border:1px solid rgba(170,120,120,0.34); background:rgba(18,10,12,0.92); color:rgba(255,232,232,0.92); font-family:inherit; cursor:pointer;">BACK</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  panel.querySelectorAll("[data-training-topic]").forEach((button) => {
+    button.addEventListener("click", () => {
+      trainingMenuController.setActiveSection(button.dataset.trainingTopic);
+      renderTrainingOverlay();
+    });
+  });
+
+  panel.querySelectorAll("[data-training-nav]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.trainingNav;
+      if (action === "prev") {
+        trainingMenuController.prev();
+        renderTrainingOverlay();
+        return;
+      }
+      if (action === "next") {
+        trainingMenuController.next();
+        renderTrainingOverlay();
+        return;
+      }
+      if (action === "back") {
+        hideTrainingOverlay();
+      }
+    });
+  });
+}
+
+function showTrainingOverlay() {
+  if (!trainingMenuController) {
+    trainingMenuController = createTrainingMenu();
+  }
+
+  hideMainMenu();
+  const overlay = ensureTrainingOverlay();
+  overlay.style.display = "flex";
+  renderTrainingOverlay();
+}
+
+function hideTrainingOverlay() {
+  if (trainingOverlay) {
+    trainingOverlay.style.display = "none";
+  }
+  showMainMenu();
+}
 const BOOT_MIN_DURATION_MS = 950;
 const BOOT_MESSAGE_INTERVAL_MS = 320;
 const BOOT_MESSAGES = [
@@ -473,6 +692,26 @@ window.addEventListener("keydown", (e) => {
   const key = typeof e.key === "string" ? e.key.toLowerCase() : "";
   keys[key] = true;
   keys[e.code] = true;
+  if (isTrainingOverlayVisible()) {
+    if (!e.repeat && e.code === "Escape") {
+      hideTrainingOverlay();
+      return;
+    }
+
+    if (!e.repeat && e.code === "ArrowLeft") {
+      trainingMenuController?.prev();
+      renderTrainingOverlay();
+      return;
+    }
+
+    if (!e.repeat && e.code === "ArrowRight") {
+      trainingMenuController?.next();
+      renderTrainingOverlay();
+      return;
+    }
+
+    return;
+  }
 
   if (!appState.started) {
     return;
@@ -881,6 +1120,7 @@ function startGameFromMainMenu() {
   if (appState.started) return;
 
   appState.started = true;
+  hideTrainingOverlay();
   hideMainMenu();
   setUIState(UI_STATE.GAME);
   pauseState.paused = false;
@@ -901,7 +1141,18 @@ createMainMenu({
   kickerText: "Low Orbit Sanitation Division",
   subtitleText: "Return to shift and restore low orbit",
   footerText: "Arrow Keys / W S / Q E Navigate   Enter Select",
+  selectedDifficultyId: activeDifficulty.id,
+  onDifficultyChange: (difficultyId) => {
+    const selectedDifficulty = DIFFICULTY_PRESETS[difficultyId];
+    if (!selectedDifficulty) {
+      return;
+    }
+
+    activeDifficulty = selectedDifficulty;
+    console.log("DIFFICULTY CHANGED:", selectedDifficulty.label);
+  },
   onStart: startGameFromMainMenu,
+  onTraining: showTrainingOverlay,
   onSettings: () => showPlaceholderMenuPanel("Settings"),
   onCredits: () => showPlaceholderMenuPanel("Credits"),
 });
@@ -1028,12 +1279,25 @@ function animate() {
     totalSatelliteCount - damagedSatelliteCount,
   );
 
+  const resolvedSafeFunctionalThreshold =
+    typeof activeDifficulty.kessler.safeFunctionalThreshold === "function"
+      ? activeDifficulty.kessler.safeFunctionalThreshold(satellites)
+      : activeDifficulty.kessler.safeFunctionalThreshold;
+
+  kesslerSyndrome.config.safeFunctionalThreshold =
+    resolvedSafeFunctionalThreshold;
+
   updateKesslerSyndrome(kesslerSyndrome, {
     functionalSatellites: functionalSatelliteCount,
     totalSatellites: totalSatelliteCount,
     unrepairedSatellites: damagedSatelliteCount,
     activeDebrisCount,
     dt,
+  });
+
+  updateSessionRunContext(sessionStats, {
+    kesslerMeter: getKesslerUIState(kesslerSyndrome).meter,
+    activeDebrisCount,
   });
 
   const kesslerSpawnMultiplier = getKesslerSpawnMultiplier(kesslerSyndrome);

@@ -15,6 +15,9 @@ const gamepadBindings = {
   ArrowUp: { axis: 3, dir: -1, buttons: [12] },
   ArrowDown: { axis: 3, dir: 1, buttons: [13] },
 
+  // Tracker mode toggle
+  KeyM: { button: 3 },
+
   // Boost
   ShiftLeft: { buttons: [5, 7] },
   ShiftRight: { buttons: [5, 7] },
@@ -227,6 +230,10 @@ export function applyVirtualStateToKeys(keys) {
 
     if (code === "KeyD") {
       keys.d = !!value;
+    }
+
+    if (code === "KeyM") {
+      keys.m = !!value;
     }
 
     if (code === "ShiftLeft" || code === "ShiftRight" || code === "Shift") {

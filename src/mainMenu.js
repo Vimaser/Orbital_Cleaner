@@ -4,8 +4,26 @@ let currentOptions = null;
 let menuButtons = [];
 let selectedIndex = 0;
 let keyHandlerAttached = false;
+let currentMenuView = "main";
+let subtitleNode = null;
+let footerNode = null;
+let buttonListNode = null;
 
-const MENU_BUTTONS = ["START", "SETTINGS", "CREDITS"];
+const MAIN_MENU_BUTTONS = ["START", "TRAINING", "SETTINGS", "CREDITS"];
+const SETTINGS_MENU_BUTTONS = [
+  "TRAINING_SHIFT",
+  "CERTIFIED",
+  "HAZARD_DUTY",
+  "ZERO_TOLERANCE",
+  "BACK",
+];
+
+const DIFFICULTY_LABELS = {
+  TRAINING_SHIFT: "Training Shift",
+  CERTIFIED: "Certified",
+  HAZARD_DUTY: "Hazard Duty",
+  ZERO_TOLERANCE: "Zero Tolerance",
+};
 
 function injectStyles() {
   if (stylesTag) return;
@@ -143,6 +161,14 @@ function injectStyles() {
       color: rgba(240, 250, 255, 0.98);
     }
 
+    .oc-main-menu-button.is-active-difficulty {
+      border-color: rgba(170, 232, 120, 0.82);
+      box-shadow:
+        0 0 0 1px rgba(170, 232, 120, 0.18) inset,
+        0 0 14px rgba(170, 232, 120, 0.1);
+      color: rgba(244, 255, 232, 0.98);
+    }
+
     .oc-main-menu-footer {
       margin-top: 18px;
       text-align: center;
@@ -201,6 +227,88 @@ function injectStyles() {
   document.head.appendChild(stylesTag);
 }
 
+function getCurrentButtonLabels() {
+  return currentMenuView === "settings"
+    ? SETTINGS_MENU_BUTTONS
+    : MAIN_MENU_BUTTONS;
+}
+
+function getActiveDifficultyId() {
+  return currentOptions?.selectedDifficultyId || "TRAINING_SHIFT";
+}
+
+function getDifficultyButtonText(difficultyId) {
+  const isActive = getActiveDifficultyId() === difficultyId;
+  const label = DIFFICULTY_LABELS[difficultyId] || difficultyId;
+  return isActive ? `${label}  [ACTIVE]` : label;
+}
+
+function getSubtitleText() {
+  if (currentMenuView === "settings") {
+    return (
+      currentOptions?.settingsSubtitleText ||
+      "Select orbital stability policy"
+    );
+  }
+
+  return currentOptions?.subtitleText || "Return to shift and restore low orbit";
+}
+
+function getFooterText() {
+  if (currentMenuView === "settings") {
+    return (
+      currentOptions?.settingsFooterText ||
+      "Navigate: Arrows / W S   Select: Enter   Back: Escape"
+    );
+  }
+
+  return currentOptions?.footerText || "Navigate: Arrows / W S   Select: Enter";
+}
+
+function rebuildButtonList() {
+  if (!buttonListNode) return;
+
+  buttonListNode.innerHTML = "";
+  menuButtons = getCurrentButtonLabels().map((label, index) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "oc-main-menu-button";
+    button.setAttribute("role", "menuitem");
+    button.dataset.menuLabel = label;
+    button.textContent =
+      currentMenuView === "settings" && label !== "BACK"
+        ? getDifficultyButtonText(label)
+        : label;
+
+    button.addEventListener("mouseenter", () => {
+      updateSelectedButton(index);
+    });
+
+    button.addEventListener("click", () => {
+      updateSelectedButton(index);
+      triggerSelectedButton(index);
+    });
+
+    buttonListNode.appendChild(button);
+    return button;
+  });
+
+  if (subtitleNode) {
+    subtitleNode.textContent = getSubtitleText();
+  }
+
+  if (footerNode) {
+    footerNode.textContent = getFooterText();
+  }
+
+  updateSelectedButton(0);
+}
+
+function setMenuView(nextView) {
+  currentMenuView = nextView;
+  rebuildButtonList();
+}
+
 function updateSelectedButton(nextIndex) {
   if (!menuButtons.length) return;
 
@@ -208,22 +316,56 @@ function updateSelectedButton(nextIndex) {
 
   menuButtons.forEach((button, index) => {
     const isSelected = index === selectedIndex;
+    const menuLabel = button.dataset.menuLabel;
+    const isActiveDifficulty =
+      currentMenuView === "settings" &&
+      menuLabel !== "BACK" &&
+      getActiveDifficultyId() === menuLabel;
+
     button.classList.toggle("is-selected", isSelected);
+    button.classList.toggle("is-active-difficulty", isActiveDifficulty);
     button.setAttribute("aria-selected", isSelected ? "true" : "false");
   });
 }
 
 function triggerSelectedButton(index = selectedIndex) {
-  const label = MENU_BUTTONS[index];
+  const buttonLabels = getCurrentButtonLabels();
+  const label = buttonLabels[index];
   if (!label) return;
+
+  if (currentMenuView === "settings") {
+    if (label === "BACK") {
+      setMenuView("main");
+      return;
+    }
+
+    currentOptions = {
+      ...currentOptions,
+      selectedDifficultyId: label,
+    };
+
+    if (typeof currentOptions?.onDifficultyChange === "function") {
+      currentOptions.onDifficultyChange(label);
+    }
+
+    rebuildButtonList();
+    const activeIndex = SETTINGS_MENU_BUTTONS.indexOf(label);
+    updateSelectedButton(activeIndex >= 0 ? activeIndex : 0);
+    return;
+  }
 
   if (label === "START" && typeof currentOptions?.onStart === "function") {
     currentOptions.onStart();
     return;
   }
 
-  if (label === "SETTINGS" && typeof currentOptions?.onSettings === "function") {
-    currentOptions.onSettings();
+  if (label === "TRAINING" && typeof currentOptions?.onTraining === "function") {
+    currentOptions.onTraining();
+    return;
+  }
+
+  if (label === "SETTINGS") {
+    setMenuView("settings");
     return;
   }
 
@@ -244,6 +386,12 @@ function handleKeyDown(event) {
   if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
     event.preventDefault();
     updateSelectedButton(selectedIndex + 1);
+    return;
+  }
+
+  if (event.key === "Escape" && currentMenuView === "settings") {
+    event.preventDefault();
+    setMenuView("main");
     return;
   }
 
@@ -273,6 +421,9 @@ export function createMainMenu(options = {}) {
   currentOptions = options;
 
   if (menuRoot) {
+    currentOptions = { ...currentOptions, ...options };
+    currentMenuView = "main";
+    rebuildButtonList();
     updateSelectedButton(0);
     return menuRoot;
   }
@@ -317,34 +468,17 @@ export function createMainMenu(options = {}) {
 
   const subtitle = document.createElement("p");
   subtitle.className = "oc-main-menu-subtitle";
-  subtitle.textContent = options.subtitleText || "Return to shift and restore low orbit";
+  subtitle.textContent = getSubtitleText();
+  subtitleNode = subtitle;
 
   const buttonList = document.createElement("div");
   buttonList.className = "oc-main-menu-button-list";
-
-  menuButtons = MENU_BUTTONS.map((label, index) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "oc-main-menu-button";
-    button.textContent = label;
-    button.setAttribute("role", "menuitem");
-
-    button.addEventListener("mouseenter", () => {
-      updateSelectedButton(index);
-    });
-
-    button.addEventListener("click", () => {
-      updateSelectedButton(index);
-      triggerSelectedButton(index);
-    });
-
-    buttonList.appendChild(button);
-    return button;
-  });
+  buttonListNode = buttonList;
 
   const footer = document.createElement("div");
   footer.className = "oc-main-menu-footer";
-  footer.textContent = options.footerText || "Navigate: Arrows / W S   Select: Enter";
+  footer.textContent = getFooterText();
+  footerNode = footer;
 
   panel.appendChild(kicker);
 
@@ -369,7 +503,9 @@ export function createMainMenu(options = {}) {
   menuRoot.appendChild(vignette);
 
   document.body.appendChild(menuRoot);
-
+  
+  currentMenuView = "main";
+  rebuildButtonList();
   updateSelectedButton(0);
   return menuRoot;
 }
@@ -406,6 +542,10 @@ export function destroyMainMenu() {
   menuRoot = null;
   menuButtons = [];
   currentOptions = null;
+  currentMenuView = "main";
+  subtitleNode = null;
+  footerNode = null;
+  buttonListNode = null;
   selectedIndex = 0;
 }
 

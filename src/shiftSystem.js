@@ -19,8 +19,8 @@ const DEDUCTION_POOL = [
   { label: "Behavioral Pattern Analysis Cost", type: "flat", amount: 52, weight: 4, tier: "medium" },
   { label: '"Optimization Engine" Usage Fee', type: "flat", amount: 68, weight: 4, tier: "medium" },
 
-  { label: "Mandatory 15% Management Tip", type: "percent", amount: 0.15, weight: 4, tier: "heavy" },
-  { label: "Executive Bonus Allocation", type: "percent", amount: 0.12, weight: 3, tier: "heavy" },
+  { label: "Mandatory 15% Management Tip", type: "percent", amount: 0.15, weight: 3, tier: "heavy" },
+  { label: "Executive Bonus Allocation", type: "percent", amount: 0.12, weight: 2, tier: "heavy" },
   { label: "Unexpected Orbital Congestion Fine", type: "flat", amount: 135, weight: 2, tier: "heavy" },
   { label: "Debris Mishandling Liability Claim", type: "flat", amount: 155, weight: 2, tier: "heavy" },
   { label: "Corporate Liability Coverage Fee", type: "flat", amount: 118, weight: 2, tier: "heavy" },
@@ -52,6 +52,65 @@ function removePickedByLabel(pool, picked) {
   if (pickedIndex >= 0) {
     pool.splice(pickedIndex, 1);
   }
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function resolveRunPressureContext(sessionStats) {
+  const runContext = sessionStats?.runContext || {};
+  const kesslerMeter = clamp(Number(runContext.kesslerMeter) || 0, 0, 100);
+  const activeDebrisCount = Math.max(0, Number(runContext.activeDebrisCount) || 0);
+
+  return {
+    kesslerMeter,
+    activeDebrisCount,
+  };
+}
+
+function buildSystemPressureDeductions(sessionStats, grossPay) {
+  const { kesslerMeter, activeDebrisCount } = resolveRunPressureContext(sessionStats);
+  const deductions = [];
+
+  if (kesslerMeter >= 75) {
+    deductions.push({
+      label: "Kessler Risk Adjustment",
+      value: Math.max(160, Math.round(grossPay * 0.16)),
+    });
+  } else if (kesslerMeter >= 50) {
+    deductions.push({
+      label: "Orbital Hazard Premium",
+      value: Math.max(96, Math.round(grossPay * 0.10)),
+    });
+  } else if (kesslerMeter >= 25) {
+    deductions.push({
+      label: "Unstable Orbit Liability Fee",
+      value: Math.max(52, Math.round(grossPay * 0.05)),
+    });
+  }
+
+  if (activeDebrisCount > 3) {
+    const excessDebris = activeDebrisCount - 3;
+    let congestionValue = 0;
+
+    if (activeDebrisCount <= 6) {
+      congestionValue = excessDebris * 16;
+    } else if (activeDebrisCount <= 9) {
+      congestionValue = 48 + (activeDebrisCount - 6) * 26;
+    } else if (activeDebrisCount <= 13) {
+      congestionValue = 126 + (activeDebrisCount - 9) * 36;
+    } else {
+      congestionValue = 270 + (activeDebrisCount - 13) * 52;
+    }
+
+    deductions.push({
+      label: "Debris Field Handling Fee",
+      value: congestionValue,
+    });
+  }
+
+  return deductions;
 }
 
 function buildPerformanceDeductions(sessionStats, grossPay) {
@@ -157,7 +216,15 @@ function buildDynamicDeductions(sessionStats, grossPay) {
   });
 
   const performanceDeductions = buildPerformanceDeductions(sessionStats, grossPay);
-  return mergeDeductions(baseDeductions, performanceDeductions);
+  const systemPressureDeductions = buildSystemPressureDeductions(
+    sessionStats,
+    grossPay,
+  );
+
+  return mergeDeductions(
+    mergeDeductions(baseDeductions, performanceDeductions),
+    systemPressureDeductions,
+  );
 }
 
 export function buildShiftSummary(sessionStats) {
@@ -182,12 +249,34 @@ export function createSessionStats() {
   return {
     repairsCompleted: 0,
     debrisCleared: 0,
+    runContext: {
+      kesslerMeter: 0,
+      activeDebrisCount: 0,
+    },
   };
 }
 
 export function resetSessionStats(sessionStats) {
   sessionStats.repairsCompleted = 0;
   sessionStats.debrisCleared = 0;
+  sessionStats.runContext = {
+    kesslerMeter: 0,
+    activeDebrisCount: 0,
+  };
+  return sessionStats;
+}
+
+export function updateSessionRunContext(sessionStats, runContext = {}) {
+  if (!sessionStats) return sessionStats;
+
+  sessionStats.runContext = {
+    ...(sessionStats.runContext || {
+      kesslerMeter: 0,
+      activeDebrisCount: 0,
+    }),
+    ...runContext,
+  };
+
   return sessionStats;
 }
 

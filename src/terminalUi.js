@@ -26,6 +26,24 @@ const DEFAULT_UPGRADE_OPTIONS = [
   },
 ];
 
+const SYSTEM_DEDUCTION_LABELS = new Set([
+  "Unstable Orbit Liability Fee",
+  "Orbital Hazard Premium",
+  "Kessler Risk Adjustment",
+  "Debris Field Handling Fee",
+]);
+
+function formatDeductionLines(deductions) {
+  if (!Array.isArray(deductions) || deductions.length === 0) {
+    return ["No deductions recorded."];
+  }
+
+  return deductions.map(
+    (deduction) =>
+      `${(deduction.label || "Unnamed Deduction").padEnd(30, " ")} -${deduction.value ?? 0} CR`,
+  );
+}
+
 let typeTargetText = "";
 let typeDisplayedLength = 0;
 let typeLastUpdate = 0;
@@ -103,17 +121,15 @@ function formatUpgradeScreen(terminalData) {
 
 function formatSummary(terminalData) {
   const deductions = Array.isArray(terminalData.deductions)
-    ? [...terminalData.deductions]
-        .sort((a, b) => (a?.value || 0) - (b?.value || 0))
-        .slice(0, 6)
+    ? [...terminalData.deductions].sort((a, b) => (b?.value || 0) - (a?.value || 0))
     : [];
 
-  const deductionLines = deductions
-    .map(
-      (deduction) =>
-        `${(deduction.label || "Unnamed Deduction").padEnd(30, " ")} -${deduction.value ?? 0} CR`,
-    )
-    .join("\n");
+  const systemDeductions = deductions.filter((deduction) =>
+    SYSTEM_DEDUCTION_LABELS.has(deduction?.label),
+  );
+  const administrativeDeductions = deductions.filter(
+    (deduction) => !SYSTEM_DEDUCTION_LABELS.has(deduction?.label),
+  );
 
   const damage = terminalData.damageReport || null;
   const bonusPay = terminalData.bonusPay ?? 0;
@@ -145,8 +161,11 @@ function formatSummary(terminalData) {
     `Debris Cleared                  ${terminalData.debrisCleared ?? 0}`,
     `Gross Pay                       ${terminalData.grossPay ?? 0} CR`,
     "",
-    "AUTOMATED DEDUCTIONS",
-    deductionLines || "No deductions recorded.",
+    "OPERATIONAL DEDUCTIONS",
+    ...formatDeductionLines(systemDeductions),
+    "",
+    "ADMINISTRATIVE DEDUCTIONS",
+    ...formatDeductionLines(administrativeDeductions),
     ...damageSection,
     "",
     "PERFORMANCE BONUS",

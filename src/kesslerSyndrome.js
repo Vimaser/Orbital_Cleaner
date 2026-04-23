@@ -9,6 +9,13 @@ const DEFAULT_KESSLER_CONFIG = {
   minMeter: 0,
 };
 
+function normalizeKesslerConfig(userConfig = {}) {
+  return {
+    ...DEFAULT_KESSLER_CONFIG,
+    ...userConfig,
+  };
+}
+
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
@@ -50,10 +57,7 @@ function getStatusForMeter(meter, config) {
 }
 
 export function createKesslerSyndrome(userConfig = {}) {
-  const config = {
-    ...DEFAULT_KESSLER_CONFIG,
-    ...userConfig,
-  };
+  const config = normalizeKesslerConfig(userConfig);
 
   return {
     config,
@@ -66,6 +70,25 @@ export function createKesslerSyndrome(userConfig = {}) {
     lastRiseRate: 0,
     lastDecayRate: 0,
   };
+}
+
+export function applyKesslerConfig(system, userConfig = {}) {
+  if (!system) return null;
+
+  system.config = normalizeKesslerConfig({
+    ...system.config,
+    ...userConfig,
+  });
+
+  system.meter = clamp(
+    system.meter,
+    system.config.minMeter,
+    system.config.maxMeter,
+  );
+  system.pressure = clamp(system.meter / system.config.maxMeter, 0, 1);
+  system.status = getStatusForMeter(system.meter, system.config);
+
+  return system;
 }
 
 export function resetKesslerSyndrome(system) {
