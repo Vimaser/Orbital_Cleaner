@@ -65,11 +65,6 @@ export function updateTether(line, start, end) {
   }
 
   attr.needsUpdate = true
-
-  // Safe bounding sphere update
-  if (line.geometry && line.geometry.computeBoundingSphere) {
-    line.geometry.computeBoundingSphere()
-  }
 }
 
 export function disposeTether(line) {

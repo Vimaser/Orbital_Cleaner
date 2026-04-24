@@ -1,4 +1,3 @@
-
 // DJ.js - Handles Prosperity Radio DJ line selection and playback
 import { getMusicVolume } from './sound.js';
 
@@ -41,6 +40,10 @@ function resolveDJFileUrl(fileName) {
   return new URL(`../assets/dj/${fileName}`, import.meta.url).href;
 }
 
+function getAllDJLines() {
+  return [...COMMON_LINES, ...RARE_LINES];
+}
+
 const RARE_CHANCE = 0.15;
 const DEFAULT_VOLUME = 0.6;
 
@@ -65,6 +68,19 @@ function getRandomNoRepeat(arr) {
 function pickNextLine() {
   const useRare = RARE_LINES.length > 0 && Math.random() < RARE_CHANCE;
   return useRare ? getRandomNoRepeat(RARE_LINES) : getRandomNoRepeat(COMMON_LINES);
+}
+
+export function preloadDJLines() {
+  getAllDJLines().forEach((fileName) => {
+    const audio = new Audio(resolveDJFileUrl(fileName));
+    audio.preload = 'auto';
+    audio.load();
+  });
+}
+
+export function updateDJVolume() {
+  if (!currentDJAudio) return;
+  currentDJAudio.volume = DEFAULT_VOLUME * getMusicVolume();
 }
 
 export function playDJLine(onComplete) {

@@ -206,6 +206,15 @@ function injectStyles() {
   stylesTag = document.createElement("style");
   stylesTag.id = "orbital-cleaner-main-menu-styles";
   stylesTag.textContent = `
+    .oc-main-menu-compatibility-note {
+      margin-top: 14px;
+      text-align: center;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: rgba(170, 196, 210, 0.54);
+      line-height: 1.5;
+    }
     .oc-main-menu-root {
       position: fixed;
       inset: 0;
@@ -805,6 +814,12 @@ export function createMainMenu(options = {}) {
   buttonList.className = "oc-main-menu-button-list";
   buttonListNode = buttonList;
 
+  const compatibilityNote = document.createElement("div");
+  compatibilityNote.className = "oc-main-menu-compatibility-note";
+  compatibilityNote.textContent =
+    options.compatibilityText ||
+    "Best played on Chrome desktop. Mobile/Safari not supported.";
+
   const footer = document.createElement("div");
   footer.className = "oc-main-menu-footer";
   footer.textContent = getFooterText();
@@ -824,6 +839,7 @@ export function createMainMenu(options = {}) {
 
   panel.appendChild(subtitle);
   panel.appendChild(buttonList);
+  panel.appendChild(compatibilityNote);
   panel.appendChild(footer);
 
   const vignette = document.createElement("div");

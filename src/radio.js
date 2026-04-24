@@ -28,6 +28,14 @@ function getRadioVolume() {
   return RADIO_BASE_VOLUME * getMusicVolume();
 }
 
+export function preloadRadioSongs() {
+  SONGS.forEach((file) => {
+    const audio = new Audio(file);
+    audio.preload = 'auto';
+    audio.load();
+  });
+}
+
 // --- HELPERS ---
 function getRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];

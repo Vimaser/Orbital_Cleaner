@@ -82,6 +82,7 @@ export function loadSound(name, src, { loop = false, volume = 1, group = null } 
 
   sounds[name] = audio;
   audio.volume = getEffectiveVolume(name);
+  audio.load();
 }
 
 export function playSound(name, { volume = 1, playbackRate = 1 } = {}) {

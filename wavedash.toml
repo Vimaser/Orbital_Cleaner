@@ -1,0 +1,2 @@
+upload_dir = "./dist"
+entrypoint = "index.html"

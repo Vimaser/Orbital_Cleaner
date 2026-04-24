@@ -148,7 +148,14 @@ import {
   getMusicVolume,
   getRadioEnabled,
 } from "./sound.js";
-import { startRadioStation, stopRadioStation, updateRadioVolume } from "./radio.js";
+import {
+  startRadioStation,
+  stopRadioStation,
+  updateRadioVolume,
+  preloadRadioSongs,
+} from "./radio.js";
+
+import { preloadDJLines, updateDJVolume } from "./DJ.js";
 import {
   configureComboSystem,
   updateComboSystem,
@@ -376,7 +383,113 @@ const appState = {
   started: false,
   bootReady: false,
   bootStartedAt: performance.now(),
+  shaderWarmupComplete: false,
 };
+function warmupRenderPipeline() {
+  if (appState.shaderWarmupComplete) {
+    return;
+  }
+
+  appState.shaderWarmupComplete = true;
+
+  const visibilityRestores = [];
+
+  const forceVisibleForWarmup = (object) => {
+    if (!object) return;
+
+    visibilityRestores.push({ object, visible: object.visible });
+    object.visible = true;
+  };
+
+  try {
+    preloadRadioSongs();
+    preloadDJLines();
+    forceVisibleForWarmup(sun);
+    forceVisibleForWarmup(sun?.userData?.glow);
+    forceVisibleForWarmup(sun?.userData?.outerGlow);
+    forceVisibleForWarmup(sun?.userData?.backGlow);
+    forceVisibleForWarmup(sun?.userData?.farBackGlow);
+    forceVisibleForWarmup(sun?.userData?.glare);
+
+    forceVisibleForWarmup(player);
+    forceVisibleForWarmup(player?.userData?.ship);
+    forceVisibleForWarmup(player?.userData?.dangerField);
+    forceVisibleForWarmup(player?.userData?.playerTargetRing);
+    forceVisibleForWarmup(player?.userData?.heatFx);
+    forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.outerShell);
+    forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.innerShell);
+    forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.wakeCore);
+    forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.trailParticles);
+    forceVisibleForWarmup(repairAssistRing);
+    forceVisibleForWarmup(trajectoryState?.trailLine);
+    forceVisibleForWarmup(trajectoryState?.guideLine);
+    forceVisibleForWarmup(station?.userData?.orbitRing);
+    forceVisibleForWarmup(station?.userData?.guideLine);
+
+    satellites.forEach((satellite) => {
+      forceVisibleForWarmup(satellite);
+      forceVisibleForWarmup(satellite?.userData?.targetRing);
+      forceVisibleForWarmup(satellite?.userData?.repairRing);
+      forceVisibleForWarmup(satellite?.userData?.outerRing);
+      forceVisibleForWarmup(satellite?.userData?.guideLine);
+      forceVisibleForWarmup(satellite?.userData?.repairLabel);
+      forceVisibleForWarmup(satellite?.userData?.warningLabel);
+      forceVisibleForWarmup(satellite?.userData?.collisionHalo);
+      forceVisibleForWarmup(satellite?.userData?.dawnModel);
+    });
+
+    forceVisibleForWarmup(evaSystem?.astronautSystem?.root);
+    forceVisibleForWarmup(evaSystem?.shipTether);
+    forceVisibleForWarmup(evaSystem?.debrisTether);
+
+    const warmupDebrisCountBefore = debrisManagerState.debrisList.length;
+    for (let i = 0; i < 3; i += 1) {
+      spawnTestDebrisFromManager({
+        managerState: debrisManagerState,
+        scene,
+        planetRadius,
+        player,
+        playerState,
+      });
+    }
+
+    const warmupDebris = debrisManagerState.debrisList.slice(
+      warmupDebrisCountBefore,
+    );
+    warmupDebris.forEach(forceVisibleForWarmup);
+
+    updateEvaSystem(evaSystem, 0.016);
+    updateEffects(0.016);
+
+    const warmupSatellite = satellites[0];
+    if (warmupSatellite?.userData) {
+      const previousRepairActive = warmupSatellite.userData.repairActive;
+      warmupSatellite.userData.repairActive = true;
+      onEvaDebrisAttached(evaSystem, warmupSatellite);
+      updateEvaSystem(evaSystem, 0.016);
+      renderer.render(scene, camera);
+      onEvaDebrisReleased(evaSystem);
+      warmupSatellite.userData.repairActive = previousRepairActive;
+    }
+
+    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
+    renderer.render(scene, camera);
+
+    for (const debris of warmupDebris) {
+      scene.remove(debris);
+      debris.userData.active = false;
+    }
+    debrisManagerState.debrisList.length = warmupDebrisCountBefore;
+  } catch (error) {
+    console.warn("Render pipeline warmup failed:", error);
+  } finally {
+    for (const restore of visibilityRestores) {
+      restore.object.visible = restore.visible;
+    }
+  }
+}
+
 let trainingMenuController = null;
 let trainingOverlay = null;
 let creditsOverlay = null;
@@ -688,13 +801,15 @@ function hideTrainingOverlay() {
   }
   showMainMenu();
 }
-const BOOT_MIN_DURATION_MS = 950;
-const BOOT_MESSAGE_INTERVAL_MS = 320;
+const BOOT_MIN_DURATION_MS = 1450;
+const BOOT_MESSAGE_INTERVAL_MS = 300;
 const BOOT_MESSAGES = [
-  "INITIALIZING SYSTEMS...",
-  "SYNCING ORBITAL DATA...",
-  "VERIFYING SHIFT STATUS...",
+  "INITIALIZING ORBITAL SYSTEMS...",
+  "COMPILING FLIGHT SHADERS...",
+  "SYNCING ORBITAL TELEMETRY...",
+  "VERIFYING SHIFT AUTHORIZATION...",
   "LOADING SANITATION CONTRACTS...",
+  "FINALIZING DEPLOYMENT...",
 ];
 
 const CRIT_HEAT_REPEAT_MS = 2750;
@@ -1498,6 +1613,7 @@ createMainMenu({
   onMusicVolumeChange: (volume) => {
     setMusicVolume(volume);
     updateRadioVolume();
+    updateDJVolume();
   },
   onSfxVolumeChange: (volume) => {
     setSfxVolume(volume);
@@ -1622,6 +1738,7 @@ function animate() {
     updateBootOverlay();
     drawUI(UI_STATE.MENU);
     comboLastTimestamp = null;
+    warmupRenderPipeline();
     renderer.render(scene, camera);
 
     if (performance.now() - appState.bootStartedAt >= BOOT_MIN_DURATION_MS) {
