@@ -17,18 +17,54 @@ const DEFAULT_UPGRADE_OPTIONS = [
     key: "1",
     label: "THRUSTER EFFICIENCY",
     description: "+10% thrust response",
+    requiredNet: 250,
   },
   {
     key: "2",
     label: "REPAIR SPEED",
     description: "+10% repair speed",
+    requiredNet: 500,
   },
   {
     key: "3",
     label: "HEAT TOLERANCE",
     description: "+10% heat tolerance",
+    requiredNet: 750,
   },
 ];
+
+const DEFAULT_UPGRADE_REQUIREMENT_STEPS = [0, 200, 450, 700, 1000, 1350];
+
+function getUpgradeRequirementSteps(terminalData) {
+  return Array.isArray(terminalData?.upgradeRequirementSteps) &&
+    terminalData.upgradeRequirementSteps.length > 0
+    ? terminalData.upgradeRequirementSteps
+    : DEFAULT_UPGRADE_REQUIREMENT_STEPS;
+}
+
+function getUpgradeCurrentNet(terminalData) {
+  return Number(terminalData?.currentNet ?? 0);
+}
+
+function getUpgradeCount(terminalData) {
+  return Math.max(0, Number(terminalData?.upgradeCount ?? 0));
+}
+
+function getUpgradeRequiredNet(option, terminalData) {
+  const baseRequiredNet = Math.max(0, Number(option?.requiredNet ?? 0));
+  const upgradeCount = getUpgradeCount(terminalData);
+  const steps = getUpgradeRequirementSteps(terminalData);
+  const stepIndex = Math.min(upgradeCount, steps.length - 1);
+  const scalingRequirement = stepIndex >= 0 ? Number(steps[stepIndex] ?? 0) : 0;
+  return baseRequiredNet + scalingRequirement;
+}
+
+function isUpgradeUnlocked(option, terminalData) {
+  return (
+    getUpgradeCurrentNet(terminalData) >=
+    getUpgradeRequiredNet(option, terminalData)
+  );
+}
 
 const SYSTEM_DEDUCTION_LABELS = new Set([
   "Unstable Orbit Liability Fee",
@@ -84,7 +120,11 @@ export function confirmTerminalAction() {
 
   if (activeTerminalMode === "upgrade") {
     const option = getSelectedUpgradeOption();
-    if (option && typeof activeTerminalData?.onUpgradeSelect === "function") {
+    if (
+      option &&
+      isUpgradeUnlocked(option, activeTerminalData) &&
+      typeof activeTerminalData?.onUpgradeSelect === "function"
+    ) {
       activeTerminalData.onUpgradeSelect(option, selectedUpgradeIndex);
     }
     return;
@@ -107,7 +147,7 @@ function bindTerminalInteractions() {
 
   terminalInteractionBound = true;
 
-  window.addEventListener("keydown", event => {
+  window.addEventListener("keydown", (event) => {
     if (!terminalRoot || terminalRoot.style.display !== "flex") {
       return;
     }
@@ -118,11 +158,7 @@ function bindTerminalInteractions() {
         return;
       }
 
-      if (
-        event.key === "ArrowUp" ||
-        event.key === "w" ||
-        event.key === "W"
-      ) {
+      if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
         event.preventDefault();
         selectedUpgradeIndex =
           (selectedUpgradeIndex - 1 + options.length) % options.length;
@@ -130,11 +166,7 @@ function bindTerminalInteractions() {
         return;
       }
 
-      if (
-        event.key === "ArrowDown" ||
-        event.key === "s" ||
-        event.key === "S"
-      ) {
+      if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
         event.preventDefault();
         selectedUpgradeIndex = (selectedUpgradeIndex + 1) % options.length;
         renderUpgradeContent(activeTerminalData);
@@ -185,6 +217,12 @@ function renderUpgradeContent(terminalData) {
     const label = option?.label || "UNNAMED UPGRADE";
     const description = option?.description || "No description available.";
     const isSelected = index === selectedUpgradeIndex;
+    const requiredNet = getUpgradeRequiredNet(option, terminalData);
+    const currentNet = getUpgradeCurrentNet(terminalData);
+    const unlocked = isUpgradeUnlocked(option, terminalData);
+    const statusLine = unlocked
+      ? "AUTHORIZED"
+      : `LOCKED — REQUIRES ${requiredNet} CR (CURRENT: ${currentNet} CR)`;
 
     const button = document.createElement("button");
     button.type = "button";
@@ -201,21 +239,26 @@ function renderUpgradeContent(terminalData) {
     button.style.fontFamily = "monospace";
     button.style.fontSize = "14px";
     button.style.lineHeight = "1.45";
-    button.style.cursor = "pointer";
+    button.style.cursor = unlocked ? "pointer" : "not-allowed";
     button.style.boxShadow = isSelected
       ? "0 0 0 1px rgba(120, 180, 220, 0.25) inset"
       : "none";
-    button.innerHTML = `<div>[${key}] ${label}</div><div style="opacity:0.82; margin-top:4px;">${description}</div>`;
+    button.innerHTML = `<div>[${key}] ${label}</div><div style="opacity:0.82; margin-top:4px;">${description}</div><div style="opacity:${unlocked ? "0.9" : "0.72"}; margin-top:6px;">${statusLine}</div>`;
 
     button.addEventListener("mouseenter", () => {
       selectedUpgradeIndex = index;
-      renderUpgradeContent(terminalData);
     });
 
     button.addEventListener("click", (event) => {
+      event.preventDefault();
       event.stopPropagation();
       selectedUpgradeIndex = index;
-      renderUpgradeContent(terminalData);
+
+      if (!isUpgradeUnlocked(option, terminalData)) {
+        renderUpgradeContent(terminalData);
+        return;
+      }
+
       if (typeof terminalData?.onUpgradeSelect === "function") {
         terminalData.onUpgradeSelect(option, index);
       }
@@ -229,7 +272,8 @@ function renderUpgradeContent(terminalData) {
   const footer = document.createElement("div");
   footer.style.whiteSpace = "pre-wrap";
   footer.style.marginTop = "18px";
-  footer.textContent = "CLICK OR PRESS [ENTER] TO APPLY SELECTED UPGRADE\nW/S, ARROWS, OR CONTROLLER TO CHANGE SELECTION";
+  footer.textContent =
+    "CLICK OR PRESS [ENTER] TO APPLY AUTHORIZED UPGRADE\nW/S, ARROWS, OR CONTROLLER TO CHANGE SELECTION";
   terminalContent.appendChild(footer);
 }
 
@@ -299,7 +343,13 @@ function formatUpgradeScreen(terminalData) {
       const key = option?.key || `${index + 1}`;
       const label = option?.label || "UNNAMED UPGRADE";
       const description = option?.description || "No description available.";
-      return `[${key}] ${label}\n    ${description}`;
+      const requiredNet = getUpgradeRequiredNet(option, terminalData);
+      const currentNet = getUpgradeCurrentNet(terminalData);
+      const unlocked = isUpgradeUnlocked(option, terminalData);
+      const statusLine = unlocked
+        ? "AUTHORIZED"
+        : `LOCKED — REQUIRES ${requiredNet} CR (CURRENT: ${currentNet} CR)`;
+      return `[${key}] ${label}\n    ${description}\n    ${statusLine}`;
     })
     .join("\n\n");
 
@@ -311,13 +361,15 @@ function formatUpgradeScreen(terminalData) {
     optionLines,
     ...(activeFooterLine ? ["", activeFooterLine] : []),
     "",
-    "PRESS [1], [2], OR [3] TO APPLY UPGRADE",
+    "CLICK OR PRESS [1], [2], OR [3] TO APPLY AUTHORIZED UPGRADE",
   ].join("\n");
 }
 
 function formatSummary(terminalData) {
   const deductions = Array.isArray(terminalData.deductions)
-    ? [...terminalData.deductions].sort((a, b) => (b?.value || 0) - (a?.value || 0))
+    ? [...terminalData.deductions].sort(
+        (a, b) => (b?.value || 0) - (a?.value || 0),
+      )
     : [];
 
   const systemDeductions = deductions.filter((deduction) =>
@@ -469,11 +521,24 @@ export function drawTerminalUi(_hud, data) {
   terminalContent.textContent = typeTargetText.slice(0, typeDisplayedLength);
 }
 
-export function buildUpgradeTerminalData(upgradeOptions) {
+export function buildUpgradeTerminalData({
+  upgradeOptions,
+  currentNet = 0,
+  upgradeCount = 0,
+  upgradeRequirementSteps = DEFAULT_UPGRADE_REQUIREMENT_STEPS,
+} = {}) {
   return {
-    upgradeOptions: Array.isArray(upgradeOptions) && upgradeOptions.length > 0
-      ? upgradeOptions.slice(0, 3)
-      : DEFAULT_UPGRADE_OPTIONS,
+    upgradeOptions:
+      Array.isArray(upgradeOptions) && upgradeOptions.length > 0
+        ? upgradeOptions.slice(0, 3)
+        : DEFAULT_UPGRADE_OPTIONS,
+    currentNet: Math.max(0, Number(currentNet || 0)),
+    upgradeCount: Math.max(0, Number(upgradeCount || 0)),
+    upgradeRequirementSteps:
+      Array.isArray(upgradeRequirementSteps) &&
+      upgradeRequirementSteps.length > 0
+        ? upgradeRequirementSteps
+        : DEFAULT_UPGRADE_REQUIREMENT_STEPS,
   };
 }
 
@@ -494,5 +559,7 @@ export function clearTerminalUi() {
 }
 
 export function isTerminalTypewriterComplete() {
-  return typeTargetText.length > 0 && typeDisplayedLength >= typeTargetText.length;
+  return (
+    typeTargetText.length > 0 && typeDisplayedLength >= typeTargetText.length
+  );
 }

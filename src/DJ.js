@@ -1,4 +1,6 @@
+
 // DJ.js - Handles Prosperity Radio DJ line selection and playback
+import { getMusicVolume } from './sound.js';
 
 
 // Common rotation lines
@@ -72,7 +74,7 @@ export function playDJLine(onComplete) {
   const audio = new Audio(resolveDJFileUrl(nextFile));
 
   currentDJAudio = audio;
-  audio.volume = DEFAULT_VOLUME;
+  audio.volume = DEFAULT_VOLUME * getMusicVolume();
   audio.preload = 'auto';
 
   audio.onended = () => {

@@ -174,7 +174,6 @@ export function createOrbitalShip() {
         // Do not auto-play clips
       }
 
-      console.log('[OrbitalShip] Loaded')
     },
     undefined,
     (err) => {

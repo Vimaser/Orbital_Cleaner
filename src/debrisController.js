@@ -61,7 +61,7 @@ function getDebrisSizeFeel(size) {
 
   if (normalized === 'LARGE') {
     return {
-      captureDistanceBonus: -0.14,
+      captureDistanceBonus: 0.32,
       captureAlignmentBonus: 0.035,
       captureRateMultiplier: 0.88,
       towLagMultiplier: 1.22,
@@ -71,7 +71,7 @@ function getDebrisSizeFeel(size) {
   }
 
   return {
-    captureDistanceBonus: 0,
+    captureDistanceBonus: 0.18,
     captureAlignmentBonus: 0,
     captureRateMultiplier: 1,
     towLagMultiplier: 1,
@@ -433,13 +433,6 @@ export function updateDebrisController({
     }
 
     if (debris.userData.captureProgress >= DEBRIS_CONTROLLER_TUNING.captureHoldTime) {
-      console.log('Debris captured into orbit!', {
-        intercept: debris.userData.interceptChance.toFixed(1),
-        threat: debris.userData.threatLevel,
-        size: debris.userData.size,
-        captureHold: debris.userData.captureProgress.toFixed(2),
-      })
-
       debris.userData.captureProgress = 0
       attachDebris(debris)
       debris.userData.attachGraceTime = DEBRIS_CONTROLLER_TUNING.attachGraceDuration
@@ -544,12 +537,6 @@ export function updateDebrisController({
       const nextCascadeCount = (debris.userData.cascadeCount ?? 0) + 1
       const canSpawnCascadeDebris =
         nextCascadeCount <= DEBRIS_CONTROLLER_TUNING.cascadeSpawnLimit
-
-      console.log('Debris collided with satellite!', {
-        debrisSize: debris.userData.size,
-        cascadeCount: nextCascadeCount,
-        satelliteId: collidedSatellite.uuid,
-      })
 
       damageSatellite?.(collidedSatellite, {
         source: 'debrisCollision',
@@ -666,14 +653,32 @@ export function updateDebrisController({
     if (burnResult === 'BURNED') {
       const currentSize = debris.userData.size
       const nextSize = getNextDebrisSize(currentSize)
+      const originalSizeForPayout = String(
+        debris.userData.originalSize ?? currentSize ?? 'SMALL',
+      ).toUpperCase()
+      const terminalPayoutForChain =
+        typeof debris.userData.terminalPayout === 'number'
+          ? debris.userData.terminalPayout
+          : originalSizeForPayout === 'LARGE'
+            ? 500
+            : originalSizeForPayout === 'MEDIUM'
+              ? 320
+              : 180
+
+      debris.userData.originalSize = originalSizeForPayout
+      debris.userData.terminalPayout = terminalPayoutForChain
+      debris.userData.payoutAwarded = !!debris.userData.payoutAwarded
+
+      const getStageBurnPayout = (size) => {
+        const normalized = String(size ?? 'SMALL').toUpperCase()
+        if (normalized === 'LARGE') return 500
+        if (normalized === 'MEDIUM') return 320
+        return 180
+      }
 
       // --- In-place degradation ---
       if (nextSize) {
-        console.log('Debris degraded during burn (in-place)', {
-          from: currentSize,
-          to: nextSize,
-          originalSize: debris.userData.originalSize,
-        })
+        const stagePayout = getStageBurnPayout(currentSize)
 
         // visual feedback for stage loss
         spawnBurnupExplosion(scene, debris.position.clone(), currentSize)
@@ -715,6 +720,11 @@ export function updateDebrisController({
         debris.userData.mass = stageDebris.userData.mass
         debris.userData.burnThreshold = stageDebris.userData.burnThreshold
         debris.userData.instabilityMultiplier = stageDebris.userData.instabilityMultiplier
+        debris.userData.originalSize = originalSizeForPayout
+        debris.userData.terminalPayout = terminalPayoutForChain
+        debris.userData.debrisChainId =
+          debris.userData.debrisChainId ?? stageDebris.userData.debrisChainId
+        debris.userData.payoutAwarded = !!debris.userData.payoutAwarded
 
         // reset burn state so the new stage has to actually burn down
         // instead of immediately cascading again on the next frame.
@@ -750,17 +760,21 @@ export function updateDebrisController({
           }
         }
 
+        debris.userData.lastStageBurnPayout = stagePayout
+        debris.userData.lastStageBurnSize = String(currentSize ?? 'SMALL').toUpperCase()
+        debris.userData.stagePayout = stagePayout
         return debris
       }
 
       // --- Terminal destruction (SMALL only) ---
-      console.log('Debris fully burned (terminal)', {
-        originalSize: debris.userData.originalSize,
-        payout: debris.userData.terminalPayout,
-      })
+      const stagePayout = getStageBurnPayout(currentSize)
 
       spawnBurnupExplosion(scene, debris.position.clone(), debris.userData.size)
 
+      debris.userData.originalSize = originalSizeForPayout
+      debris.userData.terminalPayout = terminalPayoutForChain
+      debris.userData.payoutAwarded = !!debris.userData.payoutAwarded
+      debris.userData.stagePayout = stagePayout
       debris.userData.disposeReason = 'burned_terminal'
       disposeDebris?.(debris)
       removeDebrisFromScene(scene, debris)

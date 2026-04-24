@@ -1,6 +1,7 @@
 // radio.js - Handles song ↔ DJ sequencing for Prosperity Radio
 
 import { playDJLine } from './DJ.js';
+import { getMusicVolume } from './sound.js';
 
 // --- SONG POOL ---
 const SONGS = [
@@ -20,6 +21,12 @@ const SONGS = [
 let currentSong = null;
 let lastSong = null;
 let radioActive = false;
+
+const RADIO_BASE_VOLUME = 0.7;
+
+function getRadioVolume() {
+  return RADIO_BASE_VOLUME * getMusicVolume();
+}
 
 // --- HELPERS ---
 function getRandom(arr) {
@@ -43,7 +50,7 @@ function playSong(onComplete) {
   const audio = new Audio(file);
 
   currentSong = audio;
-  audio.volume = 0.7;
+  audio.volume = getRadioVolume();
   audio.preload = 'auto';
 
   audio.onerror = () => {
@@ -88,5 +95,12 @@ export function stopRadioStation() {
     currentSong.pause();
     currentSong.currentTime = 0;
     currentSong = null;
+  }
+}
+
+
+export function updateRadioVolume() {
+  if (currentSong) {
+    currentSong.volume = getRadioVolume();
   }
 }

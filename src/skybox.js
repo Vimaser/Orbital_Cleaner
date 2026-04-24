@@ -311,7 +311,6 @@ export function createSkybox(scene) {
   scene.add(skybox)
   skybox.userData.safariSafeMode = safariSafeMode
 
-  console.log('[Skybox] Starfield created:', starCount, 'real stars:', REAL_STARS.length, 'constellation links:', CONSTELLATION_LINES.length)
 }
 
 export function updateSkybox(dt, camera = null) {

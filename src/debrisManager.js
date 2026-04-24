@@ -190,10 +190,6 @@ export function spawnTestDebrisInFrontOfPlayer({
       .multiplyScalar(debris.userData.speed);
   }
 
-  console.log("TEST DEBRIS SPAWNED", {
-    position: debris.position.clone(),
-    direction: debris.userData.direction?.clone() || null,
-  });
 
   return debris;
 }

@@ -303,11 +303,6 @@ function applyDebrisShapeVariation(debris, size = "MEDIUM") {
   );
 }
 
-// TODO: Known bug to revisit later.
-// There are still some glitches in the debris payout / burn chain logic.
-// Specifically, when burning a MEDIUM down to SMALL, the terminal payout
-// sometimes does not trigger correctly. Circle back and debug the
-// burn-disposal / payout handoff path later.
 function getTerminalPayoutBySize(size = "MEDIUM") {
   const normalized = String(size).toUpperCase();
 

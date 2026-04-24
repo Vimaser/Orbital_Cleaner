@@ -15,8 +15,6 @@ import {
   isLoopPlaying,
 } from './sound.js'
 
-const EVA_DEBUG = false
-
 const TARGET_RING_COLOR = new THREE.Color(0xffd84a)
 const PLAYER_RING_START_COLOR = new THREE.Color(0xff4d4d)
 const PLAYER_RING_LOCK_COLOR = new THREE.Color(0x49ff9a)
@@ -242,27 +240,12 @@ export function createEvaSystem(scene, ship) {
   scene.add(system.targetRing)
   scene.add(system.playerRing)
 
-  if (EVA_DEBUG) {
-    console.log('[EVA] createEvaSystem', {
-      hasScene: !!scene,
-      hasShip: !!ship,
-      ship,
-      astronautSystem: system.astronautSystem,
-    })
-  }
 
   return system
 }
 
 export function onEvaTargetAttached(system, target) {
   if (!system?.ship || !target) {
-    if (EVA_DEBUG) {
-      console.log('[EVA] onEvaTargetAttached ABORT', {
-        hasSystem: !!system,
-        hasShip: !!system?.ship,
-        target,
-      })
-    }
     return
   }
 
@@ -285,15 +268,6 @@ export function onEvaTargetAttached(system, target) {
   system.targetRing.visible = false
   system.playerRing.visible = false
 
-  if (EVA_DEBUG) {
-    console.log('[EVA] ATTACH', {
-      target,
-      state: system.state,
-      shipAnchorWorld: system.shipAnchorWorld.clone(),
-      startPos: system.startPos.clone(),
-      targetPos: system.targetPos.clone(),
-    })
-  }
 }
 
 export function onEvaDebrisAttached(system, debris) {
@@ -302,12 +276,6 @@ export function onEvaDebrisAttached(system, debris) {
 
 export function onEvaTargetReleased(system) {
   if (!system?.ship) {
-    if (EVA_DEBUG) {
-      console.log('[EVA] onEvaTargetReleased ABORT', {
-        hasSystem: !!system,
-        hasShip: !!system?.ship,
-      })
-    }
     return
   }
 
@@ -317,9 +285,6 @@ export function onEvaTargetReleased(system) {
     system.shipTether.visible = false
     system.debrisTether.visible = false
     stopLoop('eva_repair_wrench_loop')
-    if (EVA_DEBUG) {
-      console.log('[EVA] RELEASE while idle')
-    }
     return
   }
 
@@ -338,13 +303,6 @@ export function onEvaTargetReleased(system) {
   getShipAnchorWorld(system.ship, system.targetPos)
   releaseAstronaut(system.astronautSystem)
 
-  if (EVA_DEBUG) {
-    console.log('[EVA] RELEASE', {
-      state: system.state,
-      startPos: system.startPos.clone(),
-      targetPos: system.targetPos.clone(),
-    })
-  }
 }
 
 export function onEvaDebrisReleased(system) {
@@ -353,12 +311,6 @@ export function onEvaDebrisReleased(system) {
 
 export function updateEvaSystem(system, dt) {
   if (!system?.ship) {
-    if (EVA_DEBUG) {
-      console.log('[EVA] updateEvaSystem ABORT', {
-        hasSystem: !!system,
-        hasShip: !!system?.ship,
-      })
-    }
     return
   }
 
@@ -366,19 +318,6 @@ export function updateEvaSystem(system, dt) {
 
   getShipAnchorWorld(system.ship, system.shipAnchorWorld)
 
-  if (system._lastLoggedState !== system.state && EVA_DEBUG) {
-    console.log('[EVA] STATE', {
-      from: system._lastLoggedState ?? 'none',
-      to: system.state,
-      dt,
-      astronautVisible: system.astronautSystem?.root?.visible,
-      shipTetherVisible: system.shipTether.visible,
-      debrisTetherVisible: system.debrisTether.visible,
-      activeTarget: system.activeTarget,
-      shipAnchorWorld: system.shipAnchorWorld.clone(),
-    })
-    system._lastLoggedState = system.state
-  }
 
   if (system.state === 'idle') {
     stopLoop('eva_repair_wrench_loop');
@@ -403,14 +342,6 @@ export function updateEvaSystem(system, dt) {
     system.progress = Math.min(1, system.progress + dt / system.deployDuration)
     const eased = easeOutCubic(system.progress)
 
-    if (EVA_DEBUG && system.progress > 0.01 && !system._loggedDeploying) {
-      console.log('[EVA] DEPLOYING', {
-        progress: system.progress,
-        astronautPos: system.astronautSystem.root.position.clone(),
-        targetPos: system.targetPos.clone(),
-      })
-      system._loggedDeploying = true
-    }
 
     if (system.activeTarget) {
       getTargetWorkPoint(system.ship, system.activeTarget, system.targetPos)
@@ -491,15 +422,6 @@ export function updateEvaSystem(system, dt) {
       system.repairProgress = Math.max(0, system.repairProgress - dt * 0.45)
     }
 
-    if (EVA_DEBUG && !system._loggedAttached) {
-      console.log('[EVA] ATTACHED HOLD', {
-        astronautPos: system.astronautSystem.root.position.clone(),
-        debrisAnchorWorld: system.debrisAnchorWorld.clone(),
-        alignment: system.currentAlignment,
-        repairProgress: system.repairProgress,
-      })
-      system._loggedAttached = true
-    }
 
     if (system.repairProgress >= 1) {
       system.targetRing.visible = false
@@ -512,14 +434,6 @@ export function updateEvaSystem(system, dt) {
     system.progress = Math.min(1, system.progress + dt / system.retractDuration)
     const eased = easeOutCubic(system.progress)
 
-    if (EVA_DEBUG && system.progress > 0.01 && !system._loggedRetracting) {
-      console.log('[EVA] RETRACTING', {
-        progress: system.progress,
-        astronautPos: system.astronautSystem.root.position.clone(),
-        targetPos: system.targetPos.clone(),
-      })
-      system._loggedRetracting = true
-    }
 
     getShipAnchorWorld(system.ship, system.targetPos)
     system.worldPos.lerpVectors(system.startPos, system.targetPos, eased)
@@ -561,9 +475,6 @@ export function updateEvaSystem(system, dt) {
 export function disposeEvaSystem(system) {
   if (!system) return
 
-  if (EVA_DEBUG) {
-    console.log('[EVA] DISPOSE', system)
-  }
   stopLoop('eva_repair_wrench_loop')
 
   disposeAstronautSystem(system.astronautSystem)

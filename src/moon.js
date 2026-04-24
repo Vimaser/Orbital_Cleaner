@@ -151,7 +151,6 @@ export function createMoon(scene, overrides = {}) {
       system.moon.userData.visual = model
       system.loaderComplete = true
 
-      console.log('[Moon] Loaded moon.glb')
     },
     undefined,
     (error) => {

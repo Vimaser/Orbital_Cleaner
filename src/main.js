@@ -6,6 +6,15 @@
 // Will circle back and refactor post game jam.
 
 import * as THREE from "three";
+import {
+  createTutorialState,
+  setTutorialEnabled,
+  showRepairHintOnce,
+  showTowHintOnce,
+  showBurnHintOnce,
+  updateTutorial,
+  drawTutorialHint,
+} from "./tutorial.js";
 import { createScene } from "./scene.js";
 import { createPlanet, updatePlanet } from "./planet.js";
 import { createSun, updateSun } from "./sun.js";
@@ -133,8 +142,13 @@ import {
   stopLoop,
   stopAllLoops,
   startAmbient,
+  setSfxVolume,
+  setMusicVolume,
+  getSfxVolume,
+  getMusicVolume,
+  getRadioEnabled,
 } from "./sound.js";
-import { startRadioStation, stopRadioStation } from "./radio.js";
+import { startRadioStation, stopRadioStation, updateRadioVolume } from "./radio.js";
 import {
   configureComboSystem,
   updateComboSystem,
@@ -161,6 +175,7 @@ const SOUND_ASSETS = {
   crash: new URL("../assets/sfx/crash.ogg", import.meta.url).href,
   burnup: new URL("../assets/sfx/burnup.ogg", import.meta.url).href,
   burn: new URL("../assets/sfx/burn.ogg", import.meta.url).href,
+  towSnap: new URL("../assets/sfx/tow_snap.ogg", import.meta.url).href,
   boost: new URL("../assets/sfx/boost.ogg", import.meta.url).href,
   beep: new URL("../assets/sfx/beep.ogg", import.meta.url).href,
   critHeat: new URL("../assets/sfx/critHeat.ogg", import.meta.url).href,
@@ -203,15 +218,16 @@ loadSound("repair", SOUND_ASSETS.repair, { volume: 0.72 });
 loadSound("debris", SOUND_ASSETS.debris, { volume: 0.72 });
 loadSound("crash", SOUND_ASSETS.crash, { volume: 0.78 });
 loadSound("burnup", SOUND_ASSETS.burnup, { volume: 0.95 });
-loadSound("burn", SOUND_ASSETS.burn, { loop: true, volume: 0.26 });
-loadSound("boost", SOUND_ASSETS.boost, { loop: true, volume: 0.5 });
-loadSound("beep", SOUND_ASSETS.beep, { loop: true, volume: 0.62 });
+loadSound("burn", SOUND_ASSETS.burn, { loop: true, volume: 0.26, group: "sfx" });
+loadSound("towSnap", SOUND_ASSETS.towSnap, { volume: 0.75 });
+loadSound("boost", SOUND_ASSETS.boost, { loop: true, volume: 0.5, group: "sfx" });
+loadSound("beep", SOUND_ASSETS.beep, { loop: true, volume: 0.62, group: "sfx" });
 loadSound("critHeat", SOUND_ASSETS.critHeat, { volume: 0.72 });
 loadSound("proxAlarm", SOUND_ASSETS.proxAlarm, { volume: 0.62 });
 loadSound("lowFuelVoice", SOUND_ASSETS.lowFuelVoice, { volume: 0.78 });
 loadSound("netpay", SOUND_ASSETS.netpay, { volume: 0.7 });
 loadSound("netloss", SOUND_ASSETS.netloss, { volume: 0.7 });
-loadSound("terminal", SOUND_ASSETS.terminal, { loop: true, volume: 0.3 });
+loadSound("terminal", SOUND_ASSETS.terminal, { loop: true, volume: 0.3, group: "sfx" });
 loadSound("bonusActive", SOUND_ASSETS.bonusActive, { volume: 0.42 });
 loadSound("bonusExpired", SOUND_ASSETS.bonusExpired, { volume: 0.36 });
 loadSound("eva_deploy_air_release", SOUND_ASSETS.eva_deploy_air_release, {
@@ -220,15 +236,18 @@ loadSound("eva_deploy_air_release", SOUND_ASSETS.eva_deploy_air_release, {
 loadSound("eva_repair_wrench_loop", SOUND_ASSETS.eva_repair_wrench_loop, {
   loop: true,
   volume: 0.5,
+  group: "sfx",
 });
 
 loadSound("spaceAmbience", MUSIC_ASSETS.spaceAmbience, {
   loop: true,
   volume: 0.2,
+  group: "music",
 });
 loadSound("deepSpace", MUSIC_ASSETS.deepSpace, {
   loop: true,
   volume: 0.38,
+  group: "music",
 });
 
 const planetRadius = 200;
@@ -318,6 +337,23 @@ const STATION_TERMINAL_TRIGGER_DISTANCE = 9;
 const STATION_TERMINAL_REARM_DISTANCE = 18;
 const DEBRIS_AUTO_FOCUS_DISTANCE = 8;
 const UPGRADE_KEYS = ["1", "2", "3"];
+const UPGRADE_BASE_REQUIREMENTS = {
+  1: 250,
+  2: 500,
+  3: 750,
+};
+
+const UPGRADE_REQUIREMENT_STEPS = [0, 200, 450, 700, 1000, 1350];
+
+function getScaledUpgradeRequiredNet(option) {
+  const baseRequiredNet = Math.max(0, Number(option?.requiredNet ?? 0));
+  const stepIndex = Math.min(
+    Math.max(0, upgradePurchaseCount),
+    UPGRADE_REQUIREMENT_STEPS.length - 1,
+  );
+  const scalingRequirement = Number(UPGRADE_REQUIREMENT_STEPS[stepIndex] ?? 0);
+  return baseRequiredNet + scalingRequirement;
+}
 const RESPAWN_DELAY_SECONDS = 0.55;
 
 const COMBO_CONFIG = {
@@ -343,6 +379,138 @@ const appState = {
 };
 let trainingMenuController = null;
 let trainingOverlay = null;
+let creditsOverlay = null;
+function isCreditsOverlayVisible() {
+  return !!creditsOverlay && creditsOverlay.style.display !== "none";
+}
+
+function ensureCreditsOverlay() {
+  if (creditsOverlay) {
+    return creditsOverlay;
+  }
+
+  const overlay = document.createElement("div");
+  overlay.id = "credits-overlay";
+  Object.assign(overlay.style, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "185",
+    display: "none",
+    alignItems: "center",
+    justifyContent: "center",
+    background:
+      "radial-gradient(circle at center, rgba(8, 16, 28, 0.94) 0%, rgba(3, 7, 14, 0.985) 74%)",
+    padding: "28px",
+  });
+
+  const panel = document.createElement("div");
+  Object.assign(panel.style, {
+    width: "min(860px, 100%)",
+    maxHeight: "min(760px, 86vh)",
+    overflowY: "auto",
+    borderRadius: "18px",
+    border: "1px solid rgba(120, 220, 255, 0.24)",
+    background: "rgba(6, 12, 20, 0.92)",
+    boxShadow:
+      "0 0 0 1px rgba(90, 190, 255, 0.08) inset, 0 24px 52px rgba(0,0,0,0.46)",
+    color: "#d7f5ff",
+    fontFamily: '"IBM Plex Mono", "SFMono-Regular", Consolas, monospace',
+    padding: "28px 32px",
+    lineHeight: "1.6",
+  });
+
+  panel.innerHTML = `
+    <div style="font-size:28px; font-weight:800; letter-spacing:0.08em; color:#8de8ff; margin-bottom:10px; text-transform:uppercase;">
+      Credits & Attribution
+    </div>
+
+    <div style="font-size:13px; color:rgba(190,222,235,0.82); margin-bottom:22px; letter-spacing:0.04em;">
+      Low Orbit Sanitation Division public disclosure packet
+    </div>
+
+    <section style="margin-bottom:22px;">
+      <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">3D Assets</h2>
+      <div style="font-size:13px; color:rgba(214,238,245,0.92); margin-bottom:12px;">
+        Used under the Creative Commons Attribution 4.0 License:
+      </div>
+      <ul style="margin:0; padding-left:20px; color:rgba(225,245,255,0.94); font-size:13px;">
+        <li><strong>“EARTH”</strong> — Stéphane Agullo<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6DxnV</span></li>
+        <li><strong>“KSP: Primitive Orbital Station Complex”</strong> — Tanu Singh<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6UW9H</span></li>
+        <li><strong>“Moon”</strong> — RenderX<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/oFRLK</span></li>
+        <li><strong>“Dawn”</strong> — uperesito<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6oPxY</span></li>
+        <li><strong>“Astronaut Floating in Space”</strong> — nitwit.friends<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6WMPY</span></li>
+        <li><strong>“ISS”</strong> — uperesito<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6oOBH</span></li>
+      </ul>
+      <div style="font-size:13px; color:rgba(214,238,245,0.9); margin-top:12px;">
+        Licensed under:<br>
+        <span style="color:rgba(160,210,230,0.86);">http://creativecommons.org/licenses/by/4.0/</span>
+      </div>
+    </section>
+
+    <section style="margin-bottom:22px;">
+      <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Sound Effects</h2>
+      <div style="font-size:13px; color:rgba(214,238,245,0.92);">
+        Some sound effects are licensed from Envato Elements.
+      </div>
+    </section>
+
+    <section style="margin-bottom:22px;">
+      <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Voice & Audio</h2>
+      <div style="font-size:13px; color:rgba(214,238,245,0.92);">
+        DJ voice generated using ElevenLabs.
+      </div>
+    </section>
+
+    <section style="margin-bottom:22px;">
+      <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Game & Development</h2>
+      <div style="font-size:13px; color:rgba(214,238,245,0.92);">
+        A game by <strong>Trei Feske</strong><br>
+        <strong>Tiger Software Developers LLC</strong>
+      </div>
+    </section>
+
+    <section style="margin-bottom:24px;">
+      <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Music</h2>
+      <div style="font-size:13px; color:rgba(214,238,245,0.92);">
+        Music by <strong>Floyd & Trei Feske</strong><br>
+        Some compositions (instrumental/audio) were generated using AI tools.
+      </div>
+    </section>
+
+    <section style="margin-bottom:24px;">
+      <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Special Thanks</h2>
+      <div style="font-size:13px; color:rgba(214,238,245,0.92);">
+        Special thanks to my supportive family and friends who put up with me through all of this. None of this would be possible without them.
+      </div>
+    </section>
+
+    <button type="button" data-credits-close style="padding:11px 16px; border-radius:10px; border:1px solid rgba(170,120,120,0.34); background:rgba(18,10,12,0.92); color:rgba(255,232,232,0.92); font-family:inherit; cursor:pointer; letter-spacing:0.08em; text-transform:uppercase;">
+      Back
+    </button>
+  `;
+
+  panel.querySelector("[data-credits-close]")?.addEventListener("click", () => {
+    hideCreditsOverlay();
+  });
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+  creditsOverlay = overlay;
+  return overlay;
+}
+
+function showCreditsOverlay() {
+  hideMainMenu();
+  const overlay = ensureCreditsOverlay();
+  overlay.style.display = "flex";
+}
+
+function hideCreditsOverlay() {
+  if (creditsOverlay) {
+    creditsOverlay.style.display = "none";
+  }
+  showMainMenu();
+}
 
 function isTrainingOverlayVisible() {
   return !!trainingOverlay && trainingOverlay.style.display !== "none";
@@ -639,6 +807,39 @@ const terminalAudioState = {
   settlementCuePlayed: false,
 };
 
+const terminalRenderState = {
+  open: false,
+  mode: null,
+  data: null,
+};
+
+function shouldDrawTerminalUiForFrame() {
+  if (!shiftState.terminalOpen) {
+    terminalRenderState.open = false;
+    terminalRenderState.mode = null;
+    terminalRenderState.data = null;
+    return false;
+  }
+
+  const stateChanged =
+    terminalRenderState.open !== shiftState.terminalOpen ||
+    terminalRenderState.mode !== shiftState.terminalMode ||
+    terminalRenderState.data !== shiftState.terminalData;
+
+  if (stateChanged) {
+    terminalRenderState.open = shiftState.terminalOpen;
+    terminalRenderState.mode = shiftState.terminalMode;
+    terminalRenderState.data = shiftState.terminalData;
+    return true;
+  }
+
+  if (shiftState.terminalMode === "upgrade") {
+    return false;
+  }
+
+  return !isTerminalTypewriterComplete();
+}
+
 function buildInteractiveSummaryTerminalData(summaryData) {
   return {
     ...summaryData,
@@ -664,19 +865,32 @@ function applyUpgradeFromTerminalOption(option) {
   });
 
   if (appliedUpgrade) {
-    console.log("UPGRADE APPLIED", {
-      key: option.key,
-      appliedUpgrade,
-      playerUpgrades: { ...playerUpgrades },
-    });
+    upgradePurchaseCount += 1;
     closeShiftTerminalFlow();
   }
 }
 
-function buildInteractiveUpgradeTerminalData(upgradeOptions) {
+function buildInteractiveUpgradeTerminalData(upgradeOptions, summaryData = {}) {
+  const optionsWithRequirements = (
+    Array.isArray(upgradeOptions) && upgradeOptions.length > 0
+      ? upgradeOptions
+      : buildUpgradeOptions(playerUpgrades)
+  ).map((option) => ({
+    ...option,
+    requiredNet:
+      UPGRADE_BASE_REQUIREMENTS[String(option?.key)] ??
+      option?.requiredNet ??
+      0,
+  }));
+
   return {
-    ...buildUpgradeTerminalData(upgradeOptions),
-    onUpgradeSelect: option => {
+    ...buildUpgradeTerminalData({
+      upgradeOptions: optionsWithRequirements,
+      currentNet: summaryData?.netPay ?? shiftState.terminalData?.netPay ?? 0,
+      upgradeCount: upgradePurchaseCount,
+      upgradeRequirementSteps: UPGRADE_REQUIREMENT_STEPS,
+    }),
+    onUpgradeSelect: (option) => {
       applyUpgradeFromTerminalOption(option);
     },
   };
@@ -686,6 +900,8 @@ const comboPenaltyState = {
   atmospherePenaltyArmed: true,
   repairMissPenaltyArmed: true,
 };
+
+const tutorialState = createTutorialState();
 
 let selectedPrimaryDebris = null;
 let comboLastTimestamp = null;
@@ -744,6 +960,7 @@ function handleConfirmRequest() {
     setTerminalMode(shiftState, "upgrade");
     shiftState.terminalData = buildInteractiveUpgradeTerminalData(
       buildUpgradeOptions(playerUpgrades),
+      shiftState.terminalData,
     );
   } else {
     closeShiftTerminalFlow();
@@ -791,6 +1008,13 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
+  if (isCreditsOverlayVisible()) {
+    if (!e.repeat && e.code === "Escape") {
+      hideCreditsOverlay();
+    }
+    return;
+  }
+
   if (!appState.started) {
     return;
   }
@@ -835,6 +1059,28 @@ window.addEventListener("keydown", (e) => {
   }
 
   if (shiftState.terminalOpen && UPGRADE_KEYS.includes(key)) {
+    if (shiftState.terminalMode !== "upgrade") {
+      return;
+    }
+
+    const terminalOptions = Array.isArray(
+      shiftState.terminalData?.upgradeOptions,
+    )
+      ? shiftState.terminalData.upgradeOptions
+      : [];
+    const option = terminalOptions.find(
+      (upgradeOption) => String(upgradeOption?.key).toLowerCase() === key,
+    );
+    const requiredNet = getScaledUpgradeRequiredNet(option);
+    const currentNet = Math.max(
+      0,
+      Number(shiftState.terminalData?.currentNet ?? 0),
+    );
+
+    if (!option || currentNet < requiredNet) {
+      return;
+    }
+
     const appliedUpgrade = tryApplyTerminalUpgrade({
       key,
       shiftState,
@@ -846,11 +1092,7 @@ window.addEventListener("keydown", (e) => {
     });
 
     if (appliedUpgrade) {
-      console.log("UPGRADE APPLIED", {
-        key,
-        appliedUpgrade,
-        playerUpgrades: { ...playerUpgrades },
-      });
+      upgradePurchaseCount += 1;
       closeShiftTerminalFlow();
       return;
     }
@@ -1006,6 +1248,7 @@ const fuelConfig = {
 };
 
 const playerUpgrades = createUpgradeState();
+let upgradePurchaseCount = 0;
 const respawnState = {
   timer: 0,
   pending: false,
@@ -1087,6 +1330,9 @@ function closeShiftTerminalFlow() {
   });
   terminalAudioState.settlementCuePlayed = false;
   stopLoop("terminal");
+  terminalRenderState.open = false;
+  terminalRenderState.mode = null;
+  terminalRenderState.data = null;
   stopGameplayLoops();
   syncRadioState();
   shiftEarnings = 0;
@@ -1103,14 +1349,12 @@ function cycleMissionFocus() {
   const nextIndex = (currentIndex + 1) % MISSION_FOCUS_ORDER.length;
   mission.type = MISSION_FOCUS_ORDER[nextIndex];
   mission.status = "ACTIVE";
-  console.log("MISSION FOCUS", mission.type);
 }
 
 function setMissionFocus(type) {
   if (!MISSION_FOCUS_ORDER.includes(type)) return;
   mission.type = type;
   mission.status = "ACTIVE";
-  console.log("MISSION FOCUS", mission.type);
 }
 
 function addOrbitalRisk(amount = 0) {
@@ -1131,12 +1375,6 @@ function damageSatellite(satellite, context = {}) {
   if (typeof satellite.userData.baseRepairTime === "number") {
     satellite.userData.repairTime = satellite.userData.baseRepairTime;
   }
-
-  console.log("SATELLITE DAMAGED", {
-    satelliteId: satellite.uuid,
-    source: context.source || "unknown",
-    debrisSize: context.debrisSize || null,
-  });
 }
 
 // HUD + RADAR STATE
@@ -1212,8 +1450,12 @@ initializeTrajectoryState(trajectoryState, player.position);
 const clock = new THREE.Clock();
 configureComboSystem(COMBO_CONFIG);
 
-function startGameFromMainMenu() {
+function startGameFromMainMenu(options = {}) {
   if (appState.started) return;
+
+  if (typeof options?.tutorialEnabled === "boolean") {
+    setTutorialEnabled(tutorialState, options.tutorialEnabled);
+  }
 
   appState.started = true;
   hideTrainingOverlay();
@@ -1226,7 +1468,7 @@ function startGameFromMainMenu() {
 }
 
 function showPlaceholderMenuPanel(label) {
-  console.log(`${label} menu option selected. Wire this panel next.`);
+  void label;
 }
 
 createMainMenu({
@@ -1238,6 +1480,10 @@ createMainMenu({
   subtitleText: "Return to shift and restore low orbit",
   footerText: "Arrow Keys / W S / Q E Navigate   Enter Select",
   selectedDifficultyId: activeDifficulty.id,
+  tutorialEnabled: tutorialState.enabled,
+  musicVolume: getMusicVolume(),
+  sfxVolume: getSfxVolume(),
+  radioEnabled: getRadioEnabled(),
   onDifficultyChange: (difficultyId) => {
     const selectedDifficulty = DIFFICULTY_PRESETS[difficultyId];
     if (!selectedDifficulty) {
@@ -1245,12 +1491,33 @@ createMainMenu({
     }
 
     activeDifficulty = selectedDifficulty;
-    console.log("DIFFICULTY CHANGED:", selectedDifficulty.label);
+  },
+  onTutorialToggle: (enabled) => {
+    setTutorialEnabled(tutorialState, enabled);
+  },
+  onMusicVolumeChange: (volume) => {
+    setMusicVolume(volume);
+    updateRadioVolume();
+  },
+  onSfxVolumeChange: (volume) => {
+    setSfxVolume(volume);
+  },
+  onRadioToggle: (enabled) => {
+    shipMenuState.radioEnabled = enabled;
+    if (shipMenuState.audioStarted) {
+      syncRadioState();
+    } else {
+      setRadioState({
+        enabled: shipMenuState.radioEnabled,
+        radioTrack: shipMenuState.radioTrack,
+        spaceTrack: shipMenuState.spaceTrack,
+      });
+    }
   },
   onStart: startGameFromMainMenu,
   onTraining: showTrainingOverlay,
   onSettings: () => showPlaceholderMenuPanel("Settings"),
-  onCredits: () => showPlaceholderMenuPanel("Credits"),
+  onCredits: showCreditsOverlay,
 });
 
 setUIState(UI_STATE.MENU);
@@ -1298,7 +1565,6 @@ function updatePlayerHeat(dt) {
   }
 
   if (playerHeatState.heat >= playerHeatState.maxHeat) {
-    console.log("Player overheated in atmosphere!");
     playerHeatState.heat = 0;
     playerHeatState.warning = false;
     playerHeatState.critical = false;
@@ -1366,6 +1632,17 @@ function animate() {
   }
 
   if (!appState.started) {
+    if (isCreditsOverlayVisible()) {
+      if (controllerEscapePressed || controllerEnterPressed) {
+        hideCreditsOverlay();
+      }
+
+      stopGameplayLoops();
+      drawUI(UI_STATE.MENU);
+      comboLastTimestamp = null;
+      renderer.render(scene, camera);
+      return;
+    }
     if (isTrainingOverlayVisible()) {
       if (controllerEscapePressed) {
         hideTrainingOverlay();
@@ -1427,7 +1704,11 @@ function animate() {
       renderTrainingOverlay();
     }
 
-    if (controllerDownPressed || controllerRightPressed || controllerEnterPressed) {
+    if (
+      controllerDownPressed ||
+      controllerRightPressed ||
+      controllerEnterPressed
+    ) {
       trainingMenuController?.next();
       renderTrainingOverlay();
     }
@@ -1482,7 +1763,6 @@ function animate() {
   }
 
   // Kessler block moved
-  console.log("ACTIVE DEBRIS COUNT:", activeDebrisCount);
   const totalSatelliteCount = satellites.length;
   const damagedSatelliteCount = satellites.reduce(
     (count, satellite) => count + (satellite?.userData?.damaged ? 1 : 0),
@@ -1622,11 +1902,13 @@ function animate() {
       fuelState,
       kesslerState: getKesslerUIState(kesslerSyndrome),
     });
-    drawTerminalUi(hud, {
-      terminalOpen: shiftState.terminalOpen,
-      terminalData: shiftState.terminalData,
-      terminalMode: shiftState.terminalMode,
-    });
+    if (shouldDrawTerminalUiForFrame()) {
+      drawTerminalUi(hud, {
+        terminalOpen: shiftState.terminalOpen,
+        terminalData: shiftState.terminalData,
+        terminalMode: shiftState.terminalMode,
+      });
+    }
     comboLastTimestamp = null;
     renderer.render(scene, camera);
     return;
@@ -1687,13 +1969,6 @@ function animate() {
         if (mission.type !== "DEBRIS") {
           setMissionFocus("DEBRIS");
         }
-
-        console.log("DEBRIS CASCADE", {
-          debrisSize: cascadeDebris?.userData?.size || null,
-          satelliteId: satellite?.uuid || null,
-          orbitalRisk,
-          serviceBacklog,
-        });
       },
     });
     primaryDebris = resolvePrimaryDebris(primaryDebris);
@@ -1832,11 +2107,6 @@ function animate() {
   if (burnedUpInAtmosphere) {
     registerCrash(damageState);
     applyKesslerImpulse(kesslerSyndrome, 1.25);
-    console.log("CRASH EVENT (ATMOSPHERE)", {
-      activeDebrisCount,
-      kesslerSpawnMultiplier,
-      reason: "burnup",
-    });
     resetComboSystem();
     comboPenaltyState.atmospherePenaltyArmed = true;
     comboPenaltyState.repairMissPenaltyArmed = true;
@@ -1915,6 +2185,7 @@ function animate() {
     if (activeRepairSatellite?.userData) {
       activeRepairSatellite.userData.repairActive = true;
       onEvaDebrisAttached(evaSystem, activeRepairSatellite);
+      showRepairHintOnce(tutorialState);
 
       if (mission.type !== "REPAIR") {
         setMissionFocus("REPAIR");
@@ -2073,12 +2344,6 @@ function animate() {
       activeRepairSatellite = null;
     }
 
-    console.log("SATELLITE REPAIRED", {
-      score,
-      comboChain: comboResult.chainCount,
-      comboMultiplier: comboResult.multiplier,
-      comboBonus,
-    });
     sessionStats.repairsCompleted += 1;
   }
 
@@ -2103,7 +2368,9 @@ function animate() {
   }
 
   const previousPrimaryDebris = primaryDebris;
-  const wasAttached = !!previousPrimaryDebris?.userData?.attached;
+  const wasAttached = debrisManagerState.debrisList.some(
+    (debris) => debris?.userData?.active && debris?.userData?.attached,
+  );
 
   updateDebrisManager({
     managerState: debrisManagerState,
@@ -2142,13 +2409,6 @@ function animate() {
       if (mission.type !== "DEBRIS") {
         setMissionFocus("DEBRIS");
       }
-
-      console.log("DEBRIS CASCADE", {
-        debrisSize: cascadeDebris?.userData?.size || null,
-        satelliteId: satellite?.uuid || null,
-        orbitalRisk,
-        serviceBacklog,
-      });
     },
   });
 
@@ -2168,16 +2428,24 @@ function animate() {
     primaryDebris = resolvePrimaryDebris(previousPrimaryDebris);
   }
 
-  const isAttached = !!primaryDebris?.userData?.attached;
+  const attachedDebris = debrisManagerState.debrisList.find(
+    (debris) => debris?.userData?.active && debris?.userData?.attached,
+  );
+  const isAttached = !!attachedDebris;
+  const inBurnZone = playerState.radiusCurrent < burnRadius;
+  if (isAttached && inBurnZone) {
+    showBurnHintOnce(tutorialState);
+  }
 
-  if (!wasAttached && isAttached && primaryDebris) {
+  if (!wasAttached && isAttached && attachedDebris) {
+    showTowHintOnce(tutorialState);
     if (activeRepairSatellite?.userData) {
       activeRepairSatellite.userData.repairActive = false;
       onEvaDebrisReleased(evaSystem);
       activeRepairSatellite = null;
     }
 
-    onEvaDebrisAttached(evaSystem, primaryDebris);
+    onEvaDebrisAttached(evaSystem, attachedDebris);
 
     if (mission.type !== "DEBRIS") {
       setMissionFocus("DEBRIS");
@@ -2185,6 +2453,15 @@ function animate() {
   }
 
   if (wasAttached && !isAttached && !attachedTargetDisposedThisFrame) {
+    const wasManualRelease = keys["f"] || keys["KeyF"];
+
+    if (!wasManualRelease) {
+      playSound("towSnap", {
+        volume: 1.0,
+        playbackRate: 0.95 + Math.random() * 0.1,
+      });
+    }
+
     onEvaDebrisReleased(evaSystem);
   }
 
@@ -2192,17 +2469,35 @@ function animate() {
   const burnDisposals = disposalEvents.filter(
     (event) => event?.reason === "burned_terminal",
   );
+  const stageBurnDisposals = debrisManagerState.debrisList
+    .filter(
+      (debris) =>
+        debris?.userData?.active &&
+        typeof debris.userData.lastStageBurnPayout === "number" &&
+        debris.userData.lastStageBurnPayout > 0,
+    )
+    .map((debris) => ({
+      debris,
+      reason: "burned_stage",
+      size: debris.userData.lastStageBurnSize || debris.userData.size || null,
+      originalSize: debris.userData.originalSize || null,
+      stagePayout: debris.userData.lastStageBurnPayout,
+      terminalPayout: debris.userData.lastStageBurnPayout,
+    }));
+  const burnRewardEvents = [...stageBurnDisposals, ...burnDisposals];
 
-  if (burnDisposals.length > 0) {
-    for (const burnEvent of burnDisposals) {
+  if (burnRewardEvents.length > 0) {
+    for (const burnEvent of burnRewardEvents) {
       const terminalPayout =
-        typeof burnEvent?.terminalPayout === "number"
-          ? burnEvent.terminalPayout
-          : burnEvent?.originalSize === "LARGE"
-            ? 500
-            : burnEvent?.originalSize === "MEDIUM"
-              ? 320
-              : 180;
+        typeof burnEvent?.stagePayout === "number"
+          ? burnEvent.stagePayout
+          : typeof burnEvent?.terminalPayout === "number"
+            ? burnEvent.terminalPayout
+            : burnEvent?.originalSize === "LARGE"
+              ? 500
+              : burnEvent?.originalSize === "MEDIUM"
+                ? 320
+                : 180;
 
       const debrisReward =
         mission.type === "DEBRIS"
@@ -2245,16 +2540,12 @@ function animate() {
         orbitalRisk - PRESSURE_CONFIG.debrisDisposeRiskReduction,
       );
       applyKesslerImpulse(kesslerSyndrome, -0.75);
-      console.log("DEBRIS BURN DISPOSAL", {
-        score,
-        size: burnEvent?.size || null,
-        originalSize: burnEvent?.originalSize || null,
-        terminalPayout,
-        comboChain: comboResult.chainCount,
-        comboMultiplier: comboResult.multiplier,
-        comboBonus,
-      });
       sessionStats.debrisCleared += 1;
+      if (burnEvent?.reason === "burned_stage" && burnEvent?.debris?.userData) {
+        burnEvent.debris.userData.lastStageBurnPayout = 0;
+        burnEvent.debris.userData.lastStageBurnSize = null;
+        burnEvent.debris.userData.stagePayout = 0;
+      }
     }
   }
 
@@ -2270,11 +2561,6 @@ function animate() {
     if (hitSatellite?.userData) {
       damageSatellite(hitSatellite, { source: "player_collision" });
     }
-    console.log("CRASH EVENT (SATELLITE)", {
-      activeDebrisCount,
-      kesslerSpawnMultiplier,
-      reason: "collision",
-    });
     resetComboSystem();
     comboPenaltyState.atmospherePenaltyArmed = true;
     comboPenaltyState.repairMissPenaltyArmed = true;
@@ -2295,7 +2581,10 @@ function animate() {
   }
   warningAudioState.wasCriticalHeat = playerHeatState.critical;
 
-  const closestSatelliteDistance = getClosestSatelliteDistance(player, satellites);
+  const closestSatelliteDistance = getClosestSatelliteDistance(
+    player,
+    satellites,
+  );
   const inSatelliteProxZone =
     closestSatelliteDistance <= SATELLITE_PROX_WARNING_DISTANCE;
 
@@ -2352,6 +2641,9 @@ function animate() {
   updateEvaSystem(evaSystem, dt);
   updateFloatingTexts(dt);
   updateEffects(dt);
+
+  updateTutorial(tutorialState, dt);
+  drawTutorialHint(hud, tutorialState);
 
   renderer.render(scene, camera);
 }

@@ -10,11 +10,20 @@ let footerNode = null;
 let buttonListNode = null;
 
 const MAIN_MENU_BUTTONS = ["START", "TRAINING", "SETTINGS", "CREDITS"];
-const SETTINGS_MENU_BUTTONS = [
+const LAUNCH_MENU_BUTTONS = [
+  "GUIDANCE_TOGGLE",
   "TRAINING_SHIFT",
   "CERTIFIED",
   "HAZARD_DUTY",
   "ZERO_TOLERANCE",
+  "BACK",
+];
+
+const SETTINGS_MENU_BUTTONS = [
+  "GUIDANCE_TOGGLE",
+  "MUSIC_VOLUME",
+  "SFX_VOLUME",
+  "RADIO_TOGGLE",
   "BACK",
 ];
 
@@ -24,6 +33,172 @@ const DIFFICULTY_LABELS = {
   HAZARD_DUTY: "Hazard Duty",
   ZERO_TOLERANCE: "Zero Tolerance",
 };
+
+const MAIN_MENU_LABELS = {
+  START: "Start Shift",
+  TRAINING: "Training Module",
+  SETTINGS: "Settings",
+  CREDITS: "Credits",
+};
+
+function getTutorialEnabled() {
+  return currentOptions?.tutorialEnabled !== false;
+}
+
+function getGuidanceToggleText() {
+  return getTutorialEnabled()
+    ? "Guidance System  [ON]"
+    : "Guidance System  [OFF]";
+}
+
+function clampSettingVolume(value) {
+  return Math.max(0, Math.min(1, Number(value) || 0));
+}
+
+function getMusicVolume() {
+  return clampSettingVolume(currentOptions?.musicVolume ?? 1);
+}
+
+function getSfxVolume() {
+  return clampSettingVolume(currentOptions?.sfxVolume ?? 1);
+}
+
+function getRadioEnabled() {
+  return currentOptions?.radioEnabled !== false;
+}
+
+function formatVolumePercent(value) {
+  return `${Math.round(clampSettingVolume(value) * 100)}%`;
+}
+
+function getRadioToggleText() {
+  return getRadioEnabled() ? "Radio System  [ON]" : "Radio System  [OFF]";
+}
+
+function getSettingsButtonText(label) {
+  if (label === "GUIDANCE_TOGGLE") {
+    return getGuidanceToggleText();
+  }
+
+  if (label === "MUSIC_VOLUME") {
+    return `Music Volume  [${formatVolumePercent(getMusicVolume())}]`;
+  }
+
+  if (label === "SFX_VOLUME") {
+    return `SFX Volume  [${formatVolumePercent(getSfxVolume())}]`;
+  }
+
+  if (label === "RADIO_TOGGLE") {
+    return getRadioToggleText();
+  }
+
+  return label;
+}
+function configureVolumeSliderButton(button, label) {
+  const isMusic = label === "MUSIC_VOLUME";
+  const volumeKey = isMusic ? "musicVolume" : "sfxVolume";
+  const callbackName = isMusic ? "onMusicVolumeChange" : "onSfxVolumeChange";
+  const labelText = isMusic ? "Music Volume" : "SFX Volume";
+  const volumeValue = isMusic ? getMusicVolume() : getSfxVolume();
+
+  button.classList.add("is-slider-control");
+  button.innerHTML = `
+    <div class="oc-main-menu-slider-row">
+      <span class="oc-main-menu-slider-label">${labelText}</span>
+      <span class="oc-main-menu-slider-value">${formatVolumePercent(volumeValue)}</span>
+    </div>
+    <input class="oc-main-menu-slider" type="range" min="0" max="100" step="10" value="${Math.round(volumeValue * 100)}" aria-label="${labelText}" />
+  `;
+
+  const slider = button.querySelector("input[type='range']");
+  const valueNode = button.querySelector(".oc-main-menu-slider-value");
+
+  slider?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+
+  slider?.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+  });
+
+  slider?.addEventListener("input", (event) => {
+    event.stopPropagation();
+    const nextValue = clampSettingVolume(Number(event.target.value) / 100);
+
+    currentOptions = {
+      ...currentOptions,
+      [volumeKey]: nextValue,
+    };
+
+    if (valueNode) {
+      valueNode.textContent = formatVolumePercent(nextValue);
+    }
+
+    if (typeof currentOptions?.[callbackName] === "function") {
+      currentOptions[callbackName](nextValue);
+    }
+  });
+}
+function updateMenuOption(nextValues = {}) {
+  currentOptions = {
+    ...currentOptions,
+    ...nextValues,
+  };
+  rebuildButtonList();
+  updateSelectedButton(selectedIndex);
+}
+
+function changeSettingVolume(key, callbackName, delta) {
+  const currentValue = clampSettingVolume(currentOptions?.[key] ?? 1);
+  const nextValue = clampSettingVolume(
+    Math.round((currentValue + delta) * 10) / 10,
+  );
+
+  updateMenuOption({ [key]: nextValue });
+
+  if (typeof currentOptions?.[callbackName] === "function") {
+    currentOptions[callbackName](nextValue);
+  }
+}
+
+function toggleSetting(key, callbackName, fallbackValue = true) {
+  const currentValue = currentOptions?.[key] ?? fallbackValue;
+  const nextValue = !currentValue;
+
+  updateMenuOption({ [key]: nextValue });
+
+  if (typeof currentOptions?.[callbackName] === "function") {
+    currentOptions[callbackName](nextValue);
+  }
+}
+
+function adjustCurrentSetting(delta = 1) {
+  if (currentMenuView !== "settings") return false;
+
+  const label = getCurrentButtonLabels()[selectedIndex];
+
+  if (label === "MUSIC_VOLUME") {
+    changeSettingVolume("musicVolume", "onMusicVolumeChange", delta * 0.1);
+    return true;
+  }
+
+  if (label === "SFX_VOLUME") {
+    changeSettingVolume("sfxVolume", "onSfxVolumeChange", delta * 0.1);
+    return true;
+  }
+
+  if (label === "GUIDANCE_TOGGLE") {
+    toggleSetting("tutorialEnabled", "onTutorialToggle", true);
+    return true;
+  }
+
+  if (label === "RADIO_TOGGLE") {
+    toggleSetting("radioEnabled", "onRadioToggle", true);
+    return true;
+  }
+
+  return false;
+}
 
 function injectStyles() {
   if (stylesTag) return;
@@ -168,6 +343,38 @@ function injectStyles() {
         0 0 14px rgba(170, 232, 120, 0.1);
       color: rgba(244, 255, 232, 0.98);
     }
+    
+    .oc-main-menu-button.is-slider-control {
+      cursor: default;
+      text-align: left;
+    }
+
+    .oc-main-menu-slider-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      width: 100%;
+    }
+
+    .oc-main-menu-slider-label {
+      flex: 1 1 auto;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .oc-main-menu-slider-value {
+      min-width: 52px;
+      text-align: right;
+      color: rgba(170, 232, 120, 0.94);
+    }
+
+    .oc-main-menu-slider {
+      width: 100%;
+      margin-top: 12px;
+      accent-color: rgba(138, 222, 255, 0.95);
+      cursor: pointer;
+    }
 
     .oc-main-menu-footer {
       margin-top: 18px;
@@ -228,9 +435,15 @@ function injectStyles() {
 }
 
 function getCurrentButtonLabels() {
-  return currentMenuView === "settings"
-    ? SETTINGS_MENU_BUTTONS
-    : MAIN_MENU_BUTTONS;
+  if (currentMenuView === "launch") {
+    return LAUNCH_MENU_BUTTONS;
+  }
+
+  if (currentMenuView === "settings") {
+    return SETTINGS_MENU_BUTTONS;
+  }
+
+  return MAIN_MENU_BUTTONS;
 }
 
 function getActiveDifficultyId() {
@@ -244,21 +457,34 @@ function getDifficultyButtonText(difficultyId) {
 }
 
 function getSubtitleText() {
-  if (currentMenuView === "settings") {
+  if (currentMenuView === "launch") {
     return (
-      currentOptions?.settingsSubtitleText ||
-      "Select orbital stability policy"
+      currentOptions?.launchSubtitleText ||
+      "Authorize shift profile and guidance system"
     );
   }
 
-  return currentOptions?.subtitleText || "Return to shift and restore low orbit";
+  if (currentMenuView === "settings") {
+    return currentOptions?.settingsSubtitleText || "Employee Handbook";
+  }
+
+  return (
+    currentOptions?.subtitleText || "Return to shift and restore low orbit"
+  );
 }
 
 function getFooterText() {
+  if (currentMenuView === "launch") {
+    return (
+      currentOptions?.launchFooterText ||
+      "Toggle Guidance: Enter   Select Difficulty: Enter   Back: Escape"
+    );
+  }
+
   if (currentMenuView === "settings") {
     return (
       currentOptions?.settingsFooterText ||
-      "Navigate: Arrows / W S   Select: Enter   Back: Escape"
+      "Adjust: Left / Right   Toggle: Enter   Back: Escape"
     );
   }
 
@@ -275,16 +501,34 @@ function rebuildButtonList() {
     button.className = "oc-main-menu-button";
     button.setAttribute("role", "menuitem");
     button.dataset.menuLabel = label;
-    button.textContent =
-      currentMenuView === "settings" && label !== "BACK"
-        ? getDifficultyButtonText(label)
-        : label;
+
+    if (
+      currentMenuView === "settings" &&
+      (label === "MUSIC_VOLUME" || label === "SFX_VOLUME")
+    ) {
+      configureVolumeSliderButton(button, label);
+    } else {
+      button.textContent =
+        currentMenuView === "launch" && label === "GUIDANCE_TOGGLE"
+          ? getGuidanceToggleText()
+          : currentMenuView === "launch" && label !== "BACK"
+            ? getDifficultyButtonText(label)
+            : currentMenuView === "settings"
+              ? getSettingsButtonText(label)
+              : currentMenuView === "main"
+                ? MAIN_MENU_LABELS[label] || label
+                : label;
+    }
 
     button.addEventListener("mouseenter", () => {
       updateSelectedButton(index);
     });
 
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      if (event.target?.classList?.contains("oc-main-menu-slider")) {
+        return;
+      }
+
       updateSelectedButton(index);
       triggerSelectedButton(index);
     });
@@ -318,12 +562,20 @@ function updateSelectedButton(nextIndex) {
     const isSelected = index === selectedIndex;
     const menuLabel = button.dataset.menuLabel;
     const isActiveDifficulty =
-      currentMenuView === "settings" &&
+      currentMenuView === "launch" &&
       menuLabel !== "BACK" &&
+      menuLabel !== "GUIDANCE_TOGGLE" &&
       getActiveDifficultyId() === menuLabel;
+    const isActiveToggle =
+      currentMenuView === "settings" &&
+      ((menuLabel === "GUIDANCE_TOGGLE" && getTutorialEnabled()) ||
+        (menuLabel === "RADIO_TOGGLE" && getRadioEnabled()));
 
     button.classList.toggle("is-selected", isSelected);
-    button.classList.toggle("is-active-difficulty", isActiveDifficulty);
+    button.classList.toggle(
+      "is-active-difficulty",
+      isActiveDifficulty || isActiveToggle,
+    );
     button.setAttribute("aria-selected", isSelected ? "true" : "false");
   });
 }
@@ -338,7 +590,7 @@ export function confirmMenuAction() {
 }
 
 export function backMenuAction() {
-  if (currentMenuView === "settings") {
+  if (currentMenuView === "launch" || currentMenuView === "settings") {
     setMenuView("main");
   }
 }
@@ -348,9 +600,25 @@ function triggerSelectedButton(index = selectedIndex) {
   const label = buttonLabels[index];
   if (!label) return;
 
-  if (currentMenuView === "settings") {
+  if (currentMenuView === "launch") {
     if (label === "BACK") {
       setMenuView("main");
+      return;
+    }
+
+    if (label === "GUIDANCE_TOGGLE") {
+      const nextTutorialEnabled = !getTutorialEnabled();
+      currentOptions = {
+        ...currentOptions,
+        tutorialEnabled: nextTutorialEnabled,
+      };
+
+      if (typeof currentOptions?.onTutorialToggle === "function") {
+        currentOptions.onTutorialToggle(nextTutorialEnabled);
+      }
+
+      rebuildButtonList();
+      updateSelectedButton(0);
       return;
     }
 
@@ -363,18 +631,51 @@ function triggerSelectedButton(index = selectedIndex) {
       currentOptions.onDifficultyChange(label);
     }
 
-    rebuildButtonList();
-    const activeIndex = SETTINGS_MENU_BUTTONS.indexOf(label);
-    updateSelectedButton(activeIndex >= 0 ? activeIndex : 0);
+    if (typeof currentOptions?.onStart === "function") {
+      currentOptions.onStart({
+        difficultyId: label,
+        tutorialEnabled: getTutorialEnabled(),
+      });
+    }
     return;
   }
 
-  if (label === "START" && typeof currentOptions?.onStart === "function") {
-    currentOptions.onStart();
+  if (currentMenuView === "settings") {
+    if (label === "BACK") {
+      setMenuView("main");
+      return;
+    }
+
+    if (label === "MUSIC_VOLUME") {
+      changeSettingVolume("musicVolume", "onMusicVolumeChange", 0.1);
+      return;
+    }
+
+    if (label === "SFX_VOLUME") {
+      changeSettingVolume("sfxVolume", "onSfxVolumeChange", 0.1);
+      return;
+    }
+
+    if (label === "GUIDANCE_TOGGLE") {
+      toggleSetting("tutorialEnabled", "onTutorialToggle", true);
+      return;
+    }
+
+    if (label === "RADIO_TOGGLE") {
+      toggleSetting("radioEnabled", "onRadioToggle", true);
+    }
     return;
   }
 
-  if (label === "TRAINING" && typeof currentOptions?.onTraining === "function") {
+  if (label === "START") {
+    setMenuView("launch");
+    return;
+  }
+
+  if (
+    label === "TRAINING" &&
+    typeof currentOptions?.onTraining === "function"
+  ) {
     currentOptions.onTraining();
     return;
   }
@@ -398,10 +699,24 @@ function handleKeyDown(event) {
     return;
   }
 
+  if (event.key === "ArrowLeft" || event.key === "a" || event.key === "A") {
+    if (adjustCurrentSetting(-1)) {
+      event.preventDefault();
+      return;
+    }
+  }
+
   if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
     event.preventDefault();
     updateSelectedButton(selectedIndex + 1);
     return;
+  }
+
+  if (event.key === "ArrowRight" || event.key === "d" || event.key === "D") {
+    if (adjustCurrentSetting(1)) {
+      event.preventDefault();
+      return;
+    }
   }
 
   if (event.key === "Escape") {
@@ -518,7 +833,7 @@ export function createMainMenu(options = {}) {
   menuRoot.appendChild(vignette);
 
   document.body.appendChild(menuRoot);
-  
+
   currentMenuView = "main";
   rebuildButtonList();
   updateSelectedButton(0);
