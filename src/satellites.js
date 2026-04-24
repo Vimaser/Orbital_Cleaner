@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { clone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { CONFIG } from "./config.js";
+import { registerCrash } from "./damageSystem.js";
 
 function checkSatelliteDebrisProximity(satellite, debris) {
   if (!debris || !debris.userData?.active) return;
@@ -793,8 +794,25 @@ export function checkSatelliteCollisions(player, satellites) {
     const hitDistance =
       (satellite.userData.collisionRadius || 1) +
       SATELLITE_TUNING.collisionBuffer;
-    if (player.position.distanceTo(satellite.position) <= hitDistance) {
-      return satellite;
+    const distance = player.position.distanceTo(satellite.position);
+    const isColliding = distance <= hitDistance;
+
+    // Detect "enter" event, with same-frame duplicate prevention
+    if (isColliding && !satellite.userData.isColliding) {
+      const currentFrame = player.userData.frameId || 0;
+      const lastCrashFrame = player.userData.lastCrashFrame || -1;
+
+      if (currentFrame !== lastCrashFrame) {
+        player.userData.lastCrashFrame = currentFrame;
+        satellite.userData.isColliding = true;
+        registerCrash(player.userData?.damageState);
+        return satellite;
+      }
+    }
+
+    // Reset flag when no longer colliding
+    if (!isColliding && satellite.userData.isColliding) {
+      satellite.userData.isColliding = false;
     }
   }
 

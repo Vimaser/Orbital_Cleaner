@@ -57,6 +57,13 @@ import {
   createSessionStats,
   createShiftState,
   createUpgradeState,
+  createContractStats,
+  createPerformanceEvaluationState,
+  updateContractStatsFromSummary,
+  recordCompletedShiftForEvaluation,
+  isPerformanceEvaluationEligible,
+  isPerformanceEvaluationMandatory,
+  completePerformanceEvaluation,
   buildUpgradeOptions,
   setTerminalMode,
   tryApplyTerminalUpgrade,
@@ -123,6 +130,7 @@ import {
   setMenuVisible,
   toggleMenuVisible,
   setRadioState,
+  setPerformanceReviewState,
 } from "./menuUI.js";
 import {
   createMainMenu,
@@ -225,16 +233,32 @@ loadSound("repair", SOUND_ASSETS.repair, { volume: 0.72 });
 loadSound("debris", SOUND_ASSETS.debris, { volume: 0.72 });
 loadSound("crash", SOUND_ASSETS.crash, { volume: 0.78 });
 loadSound("burnup", SOUND_ASSETS.burnup, { volume: 0.95 });
-loadSound("burn", SOUND_ASSETS.burn, { loop: true, volume: 0.26, group: "sfx" });
+loadSound("burn", SOUND_ASSETS.burn, {
+  loop: true,
+  volume: 0.26,
+  group: "sfx",
+});
 loadSound("towSnap", SOUND_ASSETS.towSnap, { volume: 0.75 });
-loadSound("boost", SOUND_ASSETS.boost, { loop: true, volume: 0.5, group: "sfx" });
-loadSound("beep", SOUND_ASSETS.beep, { loop: true, volume: 0.62, group: "sfx" });
+loadSound("boost", SOUND_ASSETS.boost, {
+  loop: true,
+  volume: 0.5,
+  group: "sfx",
+});
+loadSound("beep", SOUND_ASSETS.beep, {
+  loop: true,
+  volume: 0.62,
+  group: "sfx",
+});
 loadSound("critHeat", SOUND_ASSETS.critHeat, { volume: 0.72 });
 loadSound("proxAlarm", SOUND_ASSETS.proxAlarm, { volume: 0.62 });
 loadSound("lowFuelVoice", SOUND_ASSETS.lowFuelVoice, { volume: 0.78 });
 loadSound("netpay", SOUND_ASSETS.netpay, { volume: 0.7 });
 loadSound("netloss", SOUND_ASSETS.netloss, { volume: 0.7 });
-loadSound("terminal", SOUND_ASSETS.terminal, { loop: true, volume: 0.3, group: "sfx" });
+loadSound("terminal", SOUND_ASSETS.terminal, {
+  loop: true,
+  volume: 0.3,
+  group: "sfx",
+});
 loadSound("bonusActive", SOUND_ASSETS.bonusActive, { volume: 0.42 });
 loadSound("bonusExpired", SOUND_ASSETS.bonusExpired, { volume: 0.36 });
 loadSound("eva_deploy_air_release", SOUND_ASSETS.eva_deploy_air_release, {
@@ -419,7 +443,9 @@ function warmupRenderPipeline() {
     forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.outerShell);
     forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.innerShell);
     forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.wakeCore);
-    forceVisibleForWarmup(player?.userData?.heatFx?.userData?.fx?.trailParticles);
+    forceVisibleForWarmup(
+      player?.userData?.heatFx?.userData?.fx?.trailParticles,
+    );
     forceVisibleForWarmup(repairAssistRing);
     forceVisibleForWarmup(trajectoryState?.trailLine);
     forceVisibleForWarmup(trajectoryState?.guideLine);
@@ -493,6 +519,7 @@ function warmupRenderPipeline() {
 let trainingMenuController = null;
 let trainingOverlay = null;
 let creditsOverlay = null;
+let performanceOverlay = null;
 function isCreditsOverlayVisible() {
   return !!creditsOverlay && creditsOverlay.style.display !== "none";
 }
@@ -623,6 +650,107 @@ function hideCreditsOverlay() {
     creditsOverlay.style.display = "none";
   }
   showMainMenu();
+}
+
+function isPerformanceOverlayVisible() {
+  return !!performanceOverlay && performanceOverlay.style.display !== "none";
+}
+
+function syncPerformanceReviewMenuState() {
+  setPerformanceReviewState({
+    shiftsSinceEvaluation: performanceEvaluationState.shiftsSinceEvaluation,
+    evaluationEligible: isPerformanceEvaluationEligible(
+      performanceEvaluationState,
+    ),
+    evaluationMandatory: isPerformanceEvaluationMandatory(
+      performanceEvaluationState,
+    ),
+  });
+}
+
+function hidePerformanceOverlay() {
+  if (performanceOverlay) {
+    performanceOverlay.style.display = "none";
+  }
+}
+
+function showPerformanceEvaluation({ mandatory = false } = {}) {
+  if (
+    !mandatory &&
+    !isPerformanceEvaluationEligible(performanceEvaluationState)
+  ) {
+    return;
+  }
+
+  const evaluation = completePerformanceEvaluation({
+    evaluationState: performanceEvaluationState,
+    contractStats,
+    upgradeState: playerUpgrades,
+  });
+
+  upgradePurchaseCount = 0;
+  syncPerformanceReviewMenuState();
+
+  if (!performanceOverlay) {
+    performanceOverlay = document.createElement("div");
+    performanceOverlay.id = "performance-overlay";
+    Object.assign(performanceOverlay.style, {
+      position: "fixed",
+      inset: "0",
+      zIndex: "190",
+      display: "none",
+      alignItems: "center",
+      justifyContent: "center",
+      background:
+        "radial-gradient(circle at center, rgba(8, 16, 28, 0.96) 0%, rgba(3, 7, 14, 0.99) 74%)",
+      padding: "28px",
+    });
+    document.body.appendChild(performanceOverlay);
+  }
+
+  const warningText = mandatory
+    ? "MANDATORY REVIEW: Six shift contract cycle complete."
+    : "VOLUNTARY REVIEW: Three shift performance review requested.";
+
+  performanceOverlay.innerHTML = `
+    <div style="width:min(860px,100%); max-height:min(760px,86vh); overflow-y:auto; border-radius:18px; border:1px solid rgba(170,232,120,0.3); background:rgba(6,12,20,0.94); box-shadow:0 0 0 1px rgba(170,232,120,0.08) inset, 0 24px 52px rgba(0,0,0,0.5); color:#d7f5ff; font-family:&quot;IBM Plex Mono&quot;, &quot;SFMono-Regular&quot;, Consolas, monospace; padding:28px 32px; line-height:1.6;">
+      <div style="font-size:28px; font-weight:800; letter-spacing:0.08em; color:#aef078; margin-bottom:10px; text-transform:uppercase;">Performance Evaluation</div>
+      <div style="font-size:13px; color:rgba(210,238,190,0.86); margin-bottom:22px; letter-spacing:0.04em;">${warningText}</div>
+
+      <section style="margin-bottom:22px; padding:18px; border:1px solid rgba(170,232,120,0.22); border-radius:14px; background:rgba(10,20,12,0.42);">
+        <div style="font-size:12px; color:rgba(214,238,245,0.74); letter-spacing:0.08em; text-transform:uppercase;">Assigned Rank</div>
+        <div style="font-size:26px; color:#f3fbff; font-weight:800; margin-top:4px;">${evaluation.rankLabel}</div>
+        <div style="font-size:13px; color:rgba(214,238,245,0.9); margin-top:8px;">${evaluation.rankNote}</div>
+      </section>
+
+      <section style="display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin-bottom:22px; font-size:13px; color:rgba(214,238,245,0.92);">
+        <div><strong>Shifts Reviewed</strong><br>${evaluation.shiftsCompleted}</div>
+        <div><strong>Final Score</strong><br>${evaluation.finalScore}</div>
+        <div><strong>Company Value</strong><br>${Math.round(evaluation.companyValue)} CR</div>
+        <div><strong>Operator Net Pay</strong><br>${Math.round(evaluation.netPay)} CR</div>
+        <div><strong>Gross Pay</strong><br>${Math.round(evaluation.grossPay)} CR</div>
+        <div><strong>Total Deductions</strong><br>${Math.round(evaluation.totalDeductions)} CR</div>
+        <div><strong>Repairs Completed</strong><br>${evaluation.repairsCompleted}</div>
+        <div><strong>Debris Cleared</strong><br>${evaluation.debrisCleared}</div>
+        <div><strong>Crashes</strong><br>${evaluation.crashes}</div>
+        <div><strong>Tow Fees</strong><br>${Math.round(evaluation.towFees)} CR</div>
+        <div><strong>Best Net Shift</strong><br>${Math.round(evaluation.bestNetShift)} CR</div>
+        <div><strong>Peak Kessler Meter</strong><br>${Math.round(evaluation.highestKesslerMeter)}%</div>
+      </section>
+
+      <section style="margin-bottom:24px; font-size:13px; color:rgba(214,238,245,0.86);">
+        Temporary contract upgrades have been reset. Upgrade authorization prices have returned to base corporate rates.
+      </section>
+
+      <button type="button" data-performance-close style="padding:11px 16px; border-radius:10px; border:1px solid rgba(170,232,120,0.34); background:rgba(10,20,12,0.92); color:rgba(238,255,232,0.94); font-family:inherit; cursor:pointer; letter-spacing:0.08em; text-transform:uppercase;">Acknowledge Review</button>
+    </div>
+  `;
+
+  performanceOverlay
+    .querySelector("[data-performance-close]")
+    ?.addEventListener("click", hidePerformanceOverlay);
+
+  performanceOverlay.style.display = "flex";
 }
 
 function isTrainingOverlayVisible() {
@@ -928,6 +1056,13 @@ const terminalRenderState = {
   data: null,
 };
 
+const contractStats = createContractStats();
+const performanceEvaluationState = createPerformanceEvaluationState();
+const damageState = createDamageState();
+
+let currentShiftSettlementRecorded = false;
+let pendingMandatoryPerformanceReview = false;
+
 function shouldDrawTerminalUiForFrame() {
   if (!shiftState.terminalOpen) {
     terminalRenderState.open = false;
@@ -1130,6 +1265,13 @@ window.addEventListener("keydown", (e) => {
     return;
   }
 
+  if (isPerformanceOverlayVisible()) {
+    if (!e.repeat && e.code === "Escape") {
+      hidePerformanceOverlay();
+    }
+    return;
+  }
+
   if (!appState.started) {
     return;
   }
@@ -1156,6 +1298,13 @@ window.addEventListener("keydown", (e) => {
 
   if (!e.repeat && (key === "m" || e.code === "KeyM")) {
     cycleMissionFocus();
+  }
+
+  if (!e.repeat && shipMenuState.open && (key === "e" || e.code === "KeyE")) {
+    showPerformanceEvaluation({
+      mandatory: isPerformanceEvaluationMandatory(performanceEvaluationState),
+    });
+    return;
   }
 
   // Manual release
@@ -1227,10 +1376,23 @@ window.addEventListener("keyup", (e) => {
   keys[e.code] = false;
 });
 
+window.addEventListener("performanceReviewRequested", () => {
+  showPerformanceEvaluation({
+    mandatory: isPerformanceEvaluationMandatory(performanceEvaluationState),
+  });
+});
+
 createMenuUI({
   radioEnabled: shipMenuState.radioEnabled,
   currentRadioTrack: shipMenuState.radioTrack,
   currentSpaceTrack: shipMenuState.spaceTrack,
+  shiftsSinceEvaluation: performanceEvaluationState.shiftsSinceEvaluation,
+  evaluationEligible: isPerformanceEvaluationEligible(
+    performanceEvaluationState,
+  ),
+  evaluationMandatory: isPerformanceEvaluationMandatory(
+    performanceEvaluationState,
+  ),
 });
 mobileControls.setPauseHandler(handleMobilePauseRequest);
 
@@ -1245,6 +1407,9 @@ createSkybox(scene);
 
 const player = createPlayer(playerRadius, startRadius);
 scene.add(player);
+// Link damage state to player for collision tracking
+player.userData = player.userData || {};
+player.userData.damageState = damageState;
 const evaSystem = createEvaSystem(scene, player.userData.ship);
 
 const playerState = createPlayerState(startRadius, baseForwardSpeed);
@@ -1350,7 +1515,6 @@ let orbitalRisk = 0;
 let serviceBacklog = 0;
 const shiftState = createShiftState();
 const sessionStats = createSessionStats();
-const damageState = createDamageState();
 const playerAccount = createPlayerAccount();
 const fuelState = createFuelState({
   max: 100,
@@ -1450,8 +1614,15 @@ function closeShiftTerminalFlow() {
   terminalRenderState.data = null;
   stopGameplayLoops();
   syncRadioState();
+
+  if (pendingMandatoryPerformanceReview) {
+    pendingMandatoryPerformanceReview = false;
+    showPerformanceEvaluation({ mandatory: true });
+  }
+
   shiftEarnings = 0;
   shiftBonusPay = 0;
+  currentShiftSettlementRecorded = false;
   resetDamageState(damageState);
   resetComboSystem();
 
@@ -1694,6 +1865,7 @@ function updatePlayerHeat(dt) {
 }
 function animate() {
   requestAnimationFrame(animate);
+  player.userData.frameId = (player.userData.frameId || 0) + 1;
 
   const now = performance.now();
   const rawDt =
@@ -1837,6 +2009,18 @@ function animate() {
     return;
   }
 
+  if (isPerformanceOverlayVisible()) {
+    if (controllerEscapePressed || controllerEnterPressed) {
+      hidePerformanceOverlay();
+    }
+
+    stopGameplayLoops();
+    drawUI(UI_STATE.GAME);
+    comboLastTimestamp = null;
+    renderer.render(scene, camera);
+    return;
+  }
+
   if (controllerPausePressed) {
     handleMobilePauseRequest();
   }
@@ -1935,6 +2119,8 @@ function animate() {
       const summary = buildShiftSummary(stats);
       const damageReport = buildDamageReport(damageState);
       summary.damageReport = damageReport;
+      summary.crashes = Math.max(0, Number(damageReport.crashes ?? 0));
+      summary.towFees = Math.max(0, Number(damageReport.towCost ?? 0));
       summary.bonusPay = shiftBonusPay;
       summary.netPay =
         (summary.netPay ?? 0) - (damageReport.totalDamageCost ?? 0);
@@ -1943,30 +2129,57 @@ function animate() {
   });
 
   if (!wasTerminalOpen && shiftState.terminalOpen) {
-    setTerminalMode(shiftState, "summary");
+    if (!shiftState.terminalMode) {
+      setTerminalMode(shiftState, "summary");
+    }
     terminalAudioState.settlementCuePlayed = false;
     startLoop("terminal");
 
     if (shiftState.terminalData) {
+      const shiftSummaryForContract = shiftState.terminalData;
       const settlementResult = applyShiftSettlement(
         playerAccount,
-        shiftState.terminalData.netPay ?? 0,
+        shiftSummaryForContract.netPay ?? 0,
       );
       const stipendApplied = tryApplyGovernmentStipend(playerAccount);
 
-      shiftState.terminalData = buildInteractiveSummaryTerminalData({
-        ...shiftState.terminalData,
-        settlementResult,
-        stipendApplied,
-        account: {
-          credits: playerAccount.credits,
-          debt: playerAccount.debt,
-          balance: getAccountBalance(playerAccount),
-          status: getAccountStatus(playerAccount),
-          completedShifts: playerAccount.completedShifts,
-          stipendAmount: playerAccount.stipendAmount,
-        },
-      });
+      if (!currentShiftSettlementRecorded) {
+        updateContractStatsFromSummary(contractStats, shiftSummaryForContract, {
+          ...sessionStats,
+          crashes: Math.max(
+            0,
+            Number(shiftSummaryForContract.damageReport?.crashes ?? 0),
+          ),
+          towFees: Math.max(
+            0,
+            Number(shiftSummaryForContract.damageReport?.towCost ?? 0),
+          ),
+        });
+        recordCompletedShiftForEvaluation(performanceEvaluationState);
+        currentShiftSettlementRecorded = true;
+
+        if (isPerformanceEvaluationMandatory(performanceEvaluationState)) {
+          pendingMandatoryPerformanceReview = true;
+        }
+
+        syncPerformanceReviewMenuState();
+      }
+
+      if (shiftState.terminalMode === "summary") {
+        shiftState.terminalData = buildInteractiveSummaryTerminalData({
+          ...shiftSummaryForContract,
+          settlementResult,
+          stipendApplied,
+          account: {
+            credits: playerAccount.credits,
+            debt: playerAccount.debt,
+            balance: getAccountBalance(playerAccount),
+            status: getAccountStatus(playerAccount),
+            completedShifts: playerAccount.completedShifts,
+            stipendAmount: playerAccount.stipendAmount,
+          },
+        });
+      }
       if (
         !terminalAudioState.settlementCuePlayed &&
         shiftState.terminalMode === "summary" &&
@@ -2668,7 +2881,6 @@ function animate() {
 
   const hitSatellite = checkSatelliteCollisions(player, satellites);
   if (hitSatellite) {
-    registerCrash(damageState);
     applyKesslerImpulse(kesslerSyndrome, 2.75);
     serviceBacklog = THREE.MathUtils.clamp(
       serviceBacklog + 6,

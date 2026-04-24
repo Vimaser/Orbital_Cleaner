@@ -33,6 +33,162 @@ const DEFAULT_UPGRADE_STATE = {
   heatLevel: 0,
 };
 
+const PERFORMANCE_EVALUATION_ELIGIBLE_SHIFTS = 3;
+const PERFORMANCE_EVALUATION_MANDATORY_SHIFTS = 6;
+
+const PERFORMANCE_RANKS = [
+  {
+    label: "Catastrophic Expense Center",
+    minScore: -999999,
+    note: "Your shift has been classified as a teachable financial event.",
+  },
+  {
+    label: "Asset Recovery Scenario",
+    minScore: -3600,
+    note: "Corporate is currently determining whether the ship or employee is easier to replace.",
+  },
+  {
+    label: "Executive Apology Generator",
+    minScore: -3000,
+    note: "Your performance has created work for people with better chairs.",
+  },
+  {
+    label: "Corporate Liability",
+    minScore: -2400,
+    note: "Your employment continues only because replacement costs exceeded projections.",
+  },
+  {
+    label: "Insurance Event",
+    minScore: -1600,
+    note: "Your file has been forwarded to Risk Containment for motivational review.",
+  },
+  {
+    label: "Negative Value Asset",
+    minScore: -900,
+    note: "Corporate has determined your output was technically measurable.",
+  },
+  {
+    label: "Payroll Incident",
+    minScore: -300,
+    note: "Your continued compensation has raised several questions.",
+  },
+  {
+    label: "Probationary Contractor",
+    minScore: 0,
+    note: "Continued employment authorized. Expectations remain low.",
+  },
+  {
+    label: "Break Even Adjacent",
+    minScore: 120,
+    note: "You approached profitability closely enough to confuse Accounting.",
+  },
+  {
+    label: "Barely Billable Operator",
+    minScore: 250,
+    note: "You produced enough value to justify additional monitoring.",
+  },
+  {
+    label: "Acceptable Docking Hazard",
+    minScore: 380,
+    note: "Your presence near company property has been conditionally approved.",
+  },
+  {
+    label: "Certified Orbital Custodian",
+    minScore: 500,
+    note: "Output meets minimum sanitation standards.",
+  },
+  {
+    label: "Low Orbit Task Sponge",
+    minScore: 650,
+    note: "You absorbed assignments at a rate considered useful by management.",
+  },
+  {
+    label: "Reliable Debris Associate",
+    minScore: 800,
+    note: "You have demonstrated basic usefulness under unsafe conditions.",
+  },
+  {
+    label: "Shift Quota Survivor",
+    minScore: 950,
+    note: "You completed enough tasks to delay the performance conversation.",
+  },
+  {
+    label: "Productive Asset",
+    minScore: 1100,
+    note: "Corporate recognizes your temporary usefulness.",
+  },
+  {
+    label: "Approved Overtime Target",
+    minScore: 1325,
+    note: "Your efficiency suggests you may safely be assigned more work.",
+  },
+  {
+    label: "Senior Sanitation Operator",
+    minScore: 1550,
+    note: "Performance exceeds standard contract projections.",
+  },
+  {
+    label: "Revenue Positive Human Unit",
+    minScore: 1750,
+    note: "Your biological overhead was offset by measurable output.",
+  },
+  {
+    label: "Orbital Revenue Specialist",
+    minScore: 1950,
+    note: "Your output has become difficult to ignore and easy to tax.",
+  },
+  {
+    label: "Shareholder Mood Stabilizer",
+    minScore: 2175,
+    note: "Your numbers were briefly mentioned in a meeting without disappointment.",
+  },
+  {
+    label: "Corporate Efficiency Threat",
+    minScore: 2400,
+    note: "Your results have been flagged for management review.",
+  },
+  {
+    label: "Unpaid Training Example",
+    minScore: 2700,
+    note: "Your performance may be shown to new hires without compensation.",
+  },
+  {
+    label: "Executive Concern",
+    minScore: 3000,
+    note: "Your productivity is beginning to affect quarterly excuses.",
+  },
+  {
+    label: "Promotion Risk Candidate",
+    minScore: 3350,
+    note: "Management is concerned you may ask for a title change.",
+  },
+  {
+    label: "Window Office Candidate",
+    minScore: 3700,
+    note: "A window may be considered after additional deductions.",
+  },
+  {
+    label: "Almost Salaried",
+    minScore: 4150,
+    note: "Corporate has identified you as vulnerable to prestige-based compensation.",
+  },
+  {
+    label: "Potential Middle Management Material",
+    minScore: 4600,
+    note: "You may one day supervise people who work harder than you.",
+  },
+  {
+    label: "Corner Office Simulation Eligible",
+    minScore: 5200,
+    note: "A virtual window has been provisionally approved pending budget review.",
+  },
+  {
+    label: "Golden Parachute Adjacent",
+    minScore: 6000,
+    note: "Your value is high enough that failure may eventually become rewarded.",
+  },
+];
+
 function weightedPick(pool) {
   const totalWeight = pool.reduce((sum, item) => sum + (item.weight || 1), 0);
   let roll = Math.random() * totalWeight;
@@ -56,6 +212,18 @@ function removePickedByLabel(pool, picked) {
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
+}
+
+function getPerformanceRank(score) {
+  let rank = PERFORMANCE_RANKS[0];
+
+  for (const candidate of PERFORMANCE_RANKS) {
+    if (score >= candidate.minScore) {
+      rank = candidate;
+    }
+  }
+
+  return rank;
 }
 
 function resolveRunPressureContext(sessionStats) {
@@ -233,7 +401,7 @@ export function buildShiftSummary(sessionStats) {
   const grossPay = repairsCompleted * 180 + debrisCleared * 320;
   const deductions = buildDynamicDeductions(sessionStats, grossPay);
   const totalDeductions = deductions.reduce((sum, item) => sum + item.value, 0);
-  const netPay = Math.max(0, grossPay - totalDeductions);
+  const netPay = grossPay - totalDeductions;
 
   return {
     repairsCompleted,
@@ -249,6 +417,8 @@ export function createSessionStats() {
   return {
     repairsCompleted: 0,
     debrisCleared: 0,
+    crashes: 0,
+    towFees: 0,
     runContext: {
       kesslerMeter: 0,
       activeDebrisCount: 0,
@@ -256,9 +426,153 @@ export function createSessionStats() {
   };
 }
 
+export function createContractStats() {
+  return {
+    shiftsCompleted: 0,
+    grossPay: 0,
+    netPay: 0,
+    totalDeductions: 0,
+    repairsCompleted: 0,
+    debrisCleared: 0,
+    crashes: 0,
+    towFees: 0,
+    bestNetShift: 0,
+    highestKesslerMeter: 0,
+  };
+}
+
+export function resetContractStats(contractStats) {
+  if (!contractStats) return createContractStats();
+
+  const freshStats = createContractStats();
+  Object.assign(contractStats, freshStats);
+  return contractStats;
+}
+
+export function updateContractStatsFromSummary(contractStats, summary = {}, sessionStats = {}) {
+  if (!contractStats) return contractStats;
+
+  const runContext = sessionStats?.runContext || {};
+
+  contractStats.shiftsCompleted += 1;
+  contractStats.grossPay += Math.max(0, Number(summary.grossPay) || 0);
+  contractStats.netPay += Math.max(0, Number(summary.netPay) || 0);
+  contractStats.totalDeductions += Math.max(0, Number(summary.totalDeductions) || 0);
+  contractStats.repairsCompleted += Math.max(0, Number(summary.repairsCompleted) || 0);
+  contractStats.debrisCleared += Math.max(0, Number(summary.debrisCleared) || 0);
+  contractStats.crashes += Math.max(0, Number(sessionStats?.crashes) || 0);
+  contractStats.towFees += Math.max(0, Number(sessionStats?.towFees) || 0);
+  contractStats.bestNetShift = Math.max(
+    contractStats.bestNetShift,
+    Math.max(0, Number(summary.netPay) || 0),
+  );
+  contractStats.highestKesslerMeter = Math.max(
+    contractStats.highestKesslerMeter,
+    Math.max(0, Number(runContext.kesslerMeter) || 0),
+  );
+
+  return contractStats;
+}
+
+export function createPerformanceEvaluationState() {
+  return {
+    shiftsSinceEvaluation: 0,
+    totalEvaluations: 0,
+    lastEvaluation: null,
+  };
+}
+
+export function recordCompletedShiftForEvaluation(evaluationState) {
+  if (!evaluationState) return evaluationState;
+
+  evaluationState.shiftsSinceEvaluation += 1;
+  return evaluationState;
+}
+
+export function isPerformanceEvaluationEligible(evaluationState) {
+  return (
+    Math.max(0, Number(evaluationState?.shiftsSinceEvaluation) || 0) >=
+    PERFORMANCE_EVALUATION_ELIGIBLE_SHIFTS
+  );
+}
+
+export function isPerformanceEvaluationMandatory(evaluationState) {
+  return (
+    Math.max(0, Number(evaluationState?.shiftsSinceEvaluation) || 0) >=
+    PERFORMANCE_EVALUATION_MANDATORY_SHIFTS
+  );
+}
+
+export function buildPerformanceEvaluation(contractStats = createContractStats()) {
+  const shiftsCompleted = Math.max(0, Number(contractStats.shiftsCompleted) || 0);
+  const repairsCompleted = Math.max(0, Number(contractStats.repairsCompleted) || 0);
+  const debrisCleared = Math.max(0, Number(contractStats.debrisCleared) || 0);
+  const grossPay = Math.max(0, Number(contractStats.grossPay) || 0);
+  const netPay = Math.max(0, Number(contractStats.netPay) || 0);
+  const totalDeductions = Math.max(0, Number(contractStats.totalDeductions) || 0);
+  const crashes = Math.max(0, Number(contractStats.crashes) || 0);
+  const towFees = Math.max(0, Number(contractStats.towFees) || 0);
+  const highestKesslerMeter = clamp(
+    Number(contractStats.highestKesslerMeter) || 0,
+    0,
+    100,
+  );
+
+  const companyValue = grossPay + totalDeductions;
+  const taskScore = repairsCompleted * 120 + debrisCleared * 145;
+  const payScore = Math.round(netPay * 0.55 + companyValue * 0.18);
+  const stabilityScore = Math.round((100 - highestKesslerMeter) * 4);
+  const penaltyScore = crashes * 220 + towFees;
+  const finalScore = taskScore + payScore + stabilityScore - penaltyScore;
+  const rank = getPerformanceRank(finalScore);
+
+  return {
+    shiftsCompleted,
+    repairsCompleted,
+    debrisCleared,
+    grossPay,
+    netPay,
+    totalDeductions,
+    companyValue,
+    crashes,
+    towFees,
+    bestNetShift: Math.max(0, Number(contractStats.bestNetShift) || 0),
+    highestKesslerMeter,
+    finalScore,
+    rankLabel: rank.label,
+    rankNote: rank.note,
+  };
+}
+
+export function completePerformanceEvaluation({
+  evaluationState,
+  contractStats,
+  upgradeState,
+}) {
+  const evaluation = buildPerformanceEvaluation(contractStats);
+
+  if (evaluationState) {
+    evaluationState.shiftsSinceEvaluation = 0;
+    evaluationState.totalEvaluations += 1;
+    evaluationState.lastEvaluation = evaluation;
+  }
+
+  if (contractStats) {
+    resetContractStats(contractStats);
+  }
+
+  if (upgradeState) {
+    resetUpgradeState(upgradeState);
+  }
+
+  return evaluation;
+}
+
 export function resetSessionStats(sessionStats) {
   sessionStats.repairsCompleted = 0;
   sessionStats.debrisCleared = 0;
+  sessionStats.crashes = 0;
+  sessionStats.towFees = 0;
   sessionStats.runContext = {
     kesslerMeter: 0,
     activeDebrisCount: 0,
@@ -291,6 +605,15 @@ export function createShiftState() {
 
 export function createUpgradeState() {
   return { ...DEFAULT_UPGRADE_STATE };
+}
+
+export function resetUpgradeState(upgradeState) {
+  if (!upgradeState) return createUpgradeState();
+
+  upgradeState.thrustLevel = 0;
+  upgradeState.repairLevel = 0;
+  upgradeState.heatLevel = 0;
+  return upgradeState;
 }
 
 export function buildUpgradeOptions(upgradeState) {
