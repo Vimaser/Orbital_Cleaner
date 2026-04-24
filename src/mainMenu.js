@@ -1,3 +1,8 @@
+import {
+  playMenuMoveSound,
+  playMenuSelectSound,
+  playMenuBackSound,
+} from "./sound.js";
 let menuRoot = null;
 let stylesTag = null;
 let currentOptions = null;
@@ -530,6 +535,9 @@ function rebuildButtonList() {
     }
 
     button.addEventListener("mouseenter", () => {
+      if (index !== selectedIndex) {
+        playMenuMoveSound();
+      }
       updateSelectedButton(index);
     });
 
@@ -539,6 +547,7 @@ function rebuildButtonList() {
       }
 
       updateSelectedButton(index);
+      playMenuSelectSound();
       triggerSelectedButton(index);
     });
 
@@ -591,15 +600,22 @@ function updateSelectedButton(nextIndex) {
 
 export function moveMenuSelection(delta = 0) {
   if (!menuButtons.length) return;
+  const previousIndex = selectedIndex;
   updateSelectedButton(selectedIndex + Number(delta));
+
+  if (selectedIndex !== previousIndex) {
+    playMenuMoveSound();
+  }
 }
 
 export function confirmMenuAction() {
+  playMenuSelectSound();
   triggerSelectedButton();
 }
 
 export function backMenuAction() {
   if (currentMenuView === "launch" || currentMenuView === "settings") {
+    playMenuBackSound();
     setMenuView("main");
   }
 }
@@ -611,6 +627,7 @@ function triggerSelectedButton(index = selectedIndex) {
 
   if (currentMenuView === "launch") {
     if (label === "BACK") {
+      playMenuBackSound();
       setMenuView("main");
       return;
     }
@@ -651,6 +668,7 @@ function triggerSelectedButton(index = selectedIndex) {
 
   if (currentMenuView === "settings") {
     if (label === "BACK") {
+      playMenuBackSound();
       setMenuView("main");
       return;
     }
@@ -704,7 +722,7 @@ function handleKeyDown(event) {
 
   if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
     event.preventDefault();
-    updateSelectedButton(selectedIndex - 1);
+    moveMenuSelection(-1);
     return;
   }
 
@@ -717,7 +735,7 @@ function handleKeyDown(event) {
 
   if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
     event.preventDefault();
-    updateSelectedButton(selectedIndex + 1);
+    moveMenuSelection(1);
     return;
   }
 

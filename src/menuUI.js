@@ -1,3 +1,8 @@
+import {
+  playMenuMoveSound,
+  playMenuSelectSound,
+} from "./sound.js";
+
 let menuRoot = null;
 let menuPanel = null;
 let menuTitle = null;
@@ -5,6 +10,9 @@ let radioStatusLine = null;
 let performanceStatusLine = null;
 let hintLine = null;
 let stateLine = null;
+
+let selectedMenuIndex = 0;
+const MENU_ACTIONS = ["radio", "performance"];
 
 const menuState = {
   visible: false,
@@ -14,6 +22,7 @@ const menuState = {
   shiftsSinceEvaluation: 0,
   evaluationEligible: false,
   evaluationMandatory: false,
+  currentRankLabel: "UNREVIEWED",
 };
 
 function ensureMenu() {
@@ -66,17 +75,40 @@ function ensureMenu() {
   stateLine.style.color = "rgba(160, 210, 235, 0.78)";
   stateLine.style.marginBottom = "8px";
 
-  radioStatusLine = document.createElement("div");
-  radioStatusLine.style.fontSize = "14px";
+  radioStatusLine = document.createElement("button");
+  radioStatusLine.type = "button";
+  radioStatusLine.style.display = "block";
+  radioStatusLine.style.width = "100%";
+  radioStatusLine.style.textAlign = "left";
+  radioStatusLine.style.padding = "8px 10px";
   radioStatusLine.style.marginBottom = "8px";
+  radioStatusLine.style.border = "1px solid rgba(120, 180, 220, 0.32)";
+  radioStatusLine.style.background = "rgba(8, 16, 28, 0.62)";
+  radioStatusLine.style.fontFamily = "monospace";
+  radioStatusLine.style.fontSize = "14px";
+  radioStatusLine.style.cursor = "pointer";
+  radioStatusLine.addEventListener("click", () => {
+    playMenuSelectSound();
+    window.dispatchEvent(new Event("radioToggleRequested"));
+  });
 
-  performanceStatusLine = document.createElement("div");
-  performanceStatusLine.style.fontSize = "13px";
+  performanceStatusLine = document.createElement("button");
+  performanceStatusLine.type = "button";
+  performanceStatusLine.style.display = "block";
+  performanceStatusLine.style.width = "100%";
+  performanceStatusLine.style.textAlign = "left";
+  performanceStatusLine.style.whiteSpace = "pre-wrap";
+  performanceStatusLine.style.padding = "8px 10px";
   performanceStatusLine.style.marginBottom = "8px";
+  performanceStatusLine.style.border = "1px solid rgba(120, 180, 220, 0.32)";
+  performanceStatusLine.style.background = "rgba(8, 16, 28, 0.62)";
+  performanceStatusLine.style.fontFamily = "monospace";
+  performanceStatusLine.style.fontSize = "13px";
   performanceStatusLine.style.color = "rgba(160, 210, 235, 0.78)";
   performanceStatusLine.style.cursor = "pointer";
   performanceStatusLine.addEventListener("click", () => {
     if (menuState.evaluationEligible || menuState.evaluationMandatory) {
+      playMenuSelectSound();
       window.dispatchEvent(new Event("performanceReviewRequested"));
     }
   });
@@ -105,6 +137,49 @@ function ensureMenu() {
   };
 }
 
+function isMenuActionEnabled(action) {
+  if (action === "performance") {
+    return menuState.evaluationEligible || menuState.evaluationMandatory;
+  }
+
+  return true;
+}
+
+function styleMenuButton(button, index, enabled = true) {
+  const selected = menuState.visible && selectedMenuIndex === index;
+
+  button.disabled = !enabled;
+  button.style.opacity = enabled ? "1" : "0.58";
+  button.style.cursor = enabled ? "pointer" : "not-allowed";
+  button.style.border = selected
+    ? "1px solid rgba(170, 230, 255, 0.95)"
+    : "1px solid rgba(120, 180, 220, 0.32)";
+  button.style.background = selected
+    ? "rgba(22, 48, 72, 0.92)"
+    : "rgba(8, 16, 28, 0.62)";
+  button.style.boxShadow = selected
+    ? "0 0 14px rgba(120, 220, 255, 0.22)"
+    : "none";
+}
+
+function dispatchMenuAction(action) {
+  if (action === "radio") {
+    playMenuSelectSound();
+    window.dispatchEvent(new Event("radioToggleRequested"));
+    return true;
+  }
+
+  if (action === "performance") {
+    if (menuState.evaluationEligible || menuState.evaluationMandatory) {
+      playMenuSelectSound();
+      window.dispatchEvent(new Event("performanceReviewRequested"));
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function updateMenuText() {
   const { stateLine, radioStatusLine, performanceStatusLine, hintLine } = ensureMenu();
 
@@ -123,16 +198,18 @@ function updateMenuText() {
     Number(menuState.shiftsSinceEvaluation) || 0,
   );
 
+  const rankLabel = menuState.currentRankLabel || "UNREVIEWED";
+
   if (menuState.evaluationMandatory) {
-    performanceStatusLine.textContent = "PERFORMANCE REVIEW: MANDATORY";
+    performanceStatusLine.textContent = `PERFORMANCE REVIEW: MANDATORY\nCURRENT RANK: ${rankLabel}`;
     performanceStatusLine.style.color = "rgba(255, 140, 120, 0.96)";
     performanceStatusLine.style.textDecoration = "underline";
   } else if (menuState.evaluationEligible) {
-    performanceStatusLine.textContent = "PERFORMANCE REVIEW: AVAILABLE";
+    performanceStatusLine.textContent = `PERFORMANCE REVIEW: AVAILABLE\nCURRENT RANK: ${rankLabel}`;
     performanceStatusLine.style.color = "rgba(170, 232, 120, 0.94)";
     performanceStatusLine.style.textDecoration = "underline";
   } else {
-    performanceStatusLine.textContent = `PERFORMANCE REVIEW: ${shiftsSinceEvaluation}/3 SHIFTS`;
+    performanceStatusLine.textContent = `PERFORMANCE REVIEW: ${shiftsSinceEvaluation}/3 SHIFTS\nCURRENT RANK: ${rankLabel}`;
     performanceStatusLine.style.color = "rgba(160, 210, 235, 0.78)";
     performanceStatusLine.style.textDecoration = "none";
   }
@@ -140,6 +217,13 @@ function updateMenuText() {
   hintLine.textContent = menuState.evaluationEligible || menuState.evaluationMandatory
     ? "R: Toggle Radio  |  E: Performance Review"
     : "R: Toggle Radio";
+
+  styleMenuButton(radioStatusLine, 0, true);
+  styleMenuButton(
+    performanceStatusLine,
+    1,
+    menuState.evaluationEligible || menuState.evaluationMandatory,
+  );
 }
 
 export function createMenuUI(initial = {}) {
@@ -151,6 +235,9 @@ export function createMenuUI(initial = {}) {
 
 export function setMenuVisible(visible) {
   menuState.visible = !!visible;
+  if (menuState.visible) {
+    selectedMenuIndex = 0;
+  }
   const { menuRoot } = ensureMenu();
   updateMenuText();
   menuRoot.style.display = menuState.visible ? "block" : "none";
@@ -190,6 +277,7 @@ export function setPerformanceReviewState({
   shiftsSinceEvaluation,
   evaluationEligible,
   evaluationMandatory,
+  currentRankLabel,
 } = {}) {
   if (typeof shiftsSinceEvaluation === "number") {
     menuState.shiftsSinceEvaluation = Math.max(0, shiftsSinceEvaluation);
@@ -203,6 +291,39 @@ export function setPerformanceReviewState({
     menuState.evaluationMandatory = evaluationMandatory;
   }
 
+  if (typeof currentRankLabel === "string" && currentRankLabel) {
+    menuState.currentRankLabel = currentRankLabel;
+  }
+
   updateMenuText();
   return { ...menuState };
+}
+
+export function moveMenuSelection(delta = 0) {
+  ensureMenu();
+
+  const previousIndex = selectedMenuIndex;
+  const direction = Number(delta) >= 0 ? 1 : -1;
+  let attempts = 0;
+
+  do {
+    selectedMenuIndex =
+      (selectedMenuIndex + direction + MENU_ACTIONS.length) % MENU_ACTIONS.length;
+    attempts += 1;
+  } while (
+    attempts < MENU_ACTIONS.length &&
+    !isMenuActionEnabled(MENU_ACTIONS[selectedMenuIndex])
+  );
+
+  if (selectedMenuIndex !== previousIndex) {
+    playMenuMoveSound();
+  }
+
+  updateMenuText();
+  return selectedMenuIndex;
+}
+
+export function confirmMenuSelection() {
+  ensureMenu();
+  return dispatchMenuAction(MENU_ACTIONS[selectedMenuIndex]);
 }

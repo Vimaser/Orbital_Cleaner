@@ -403,6 +403,10 @@ export function updatePlayer(player, state, keys, dt, config, camera = null) {
     shipAlignLerp,
     minThrottlePercent,
     maxThrottlePercent,
+    emergencyPowerActive = false,
+    emergencySpeedMultiplier = 1,
+    emergencyTurnMultiplier = 1,
+    emergencyAltitudeMultiplier = 1,
     highOrbitMaxRadius = maxRadius + 6,
     transferOrbitMaxRadius = maxRadius + 12,
     highOrbitTurnBonus = 0.18,
@@ -446,8 +450,11 @@ export function updatePlayer(player, state, keys, dt, config, camera = null) {
     0,
     1,
   );
+  const emergencyTurnFactor = emergencyPowerActive
+    ? emergencyTurnMultiplier
+    : 1;
   const effectiveYawRate =
-    yawRate * (1 + altitudeAlphaForTurn * highOrbitTurnBonus);
+    yawRate * (1 + altitudeAlphaForTurn * highOrbitTurnBonus) * emergencyTurnFactor;
   const yaw = yawInput * effectiveYawRate * dt;
   if (yaw !== 0) {
     const qYaw = new THREE.Quaternion().setFromAxisAngle(radialDirection, yaw);
@@ -463,8 +470,12 @@ export function updatePlayer(player, state, keys, dt, config, camera = null) {
 
   forward.lerp(desiredForward, forwardDriftBlend).normalize();
 
+  const emergencyAltitudeFactor = emergencyPowerActive
+    ? emergencyAltitudeMultiplier
+    : 1;
+
   if (climbInput !== 0) {
-    state.targetRadius += climbInput * altitudeChangeRate * dt;
+    state.targetRadius += climbInput * altitudeChangeRate * emergencyAltitudeFactor * dt;
   }
   state.targetRadius = THREE.MathUtils.clamp(
     state.targetRadius,
@@ -486,9 +497,15 @@ export function updatePlayer(player, state, keys, dt, config, camera = null) {
     (throttlePercent - minThrottlePercent) /
     (maxThrottlePercent - minThrottlePercent);
 
+  const emergencySpeedFactor = emergencyPowerActive
+    ? emergencySpeedMultiplier
+    : 1;
+  const effectiveBaseForwardSpeed = baseForwardSpeed * emergencySpeedFactor;
+  const effectiveMaxForwardSpeed = maxForwardSpeed * emergencySpeedFactor;
+
   const cruiseSpeed = THREE.MathUtils.lerp(
-    baseForwardSpeed,
-    maxForwardSpeed,
+    effectiveBaseForwardSpeed,
+    effectiveMaxForwardSpeed,
     throttleAlpha,
   );
 
@@ -510,7 +527,7 @@ export function updatePlayer(player, state, keys, dt, config, camera = null) {
     altitudeAlphaForSpeed * (lowOrbitSpeedBonus + highOrbitSpeedPenalty) -
     transferOrbitAlpha * transferOrbitSpeedPenalty;
 
-  const boost = keys["shift"] ? boostMultiplier : 1;
+  const boost = keys["shift"] && !emergencyPowerActive ? boostMultiplier : 1;
   const targetSpeed = cruiseSpeed * altitudeSpeedFactor * boost;
 
   state.currentSpeed = THREE.MathUtils.lerp(

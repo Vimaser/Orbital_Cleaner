@@ -419,6 +419,8 @@ export function createSessionStats() {
     debrisCleared: 0,
     crashes: 0,
     towFees: 0,
+    maintenanceFees: 0,
+    fuelServiceFees: 0,
     runContext: {
       kesslerMeter: 0,
       activeDebrisCount: 0,
@@ -436,6 +438,8 @@ export function createContractStats() {
     debrisCleared: 0,
     crashes: 0,
     towFees: 0,
+    maintenanceFees: 0,
+    fuelServiceFees: 0,
     bestNetShift: 0,
     highestKesslerMeter: 0,
   };
@@ -461,7 +465,16 @@ export function updateContractStatsFromSummary(contractStats, summary = {}, sess
   contractStats.repairsCompleted += Math.max(0, Number(summary.repairsCompleted) || 0);
   contractStats.debrisCleared += Math.max(0, Number(summary.debrisCleared) || 0);
   contractStats.crashes += Math.max(0, Number(sessionStats?.crashes) || 0);
-  contractStats.towFees += Math.max(0, Number(sessionStats?.towFees) || 0);
+  const towFees = Math.max(0, Number(sessionStats?.towFees) || 0);
+  const maintenanceFees = Math.max(0, Number(sessionStats?.maintenanceFees) || 0);
+  const fuelServiceFees = Math.max(
+    0,
+    Number(sessionStats?.fuelServiceFees) || towFees + maintenanceFees,
+  );
+
+  contractStats.towFees += towFees;
+  contractStats.maintenanceFees += maintenanceFees;
+  contractStats.fuelServiceFees += fuelServiceFees;
   contractStats.bestNetShift = Math.max(
     contractStats.bestNetShift,
     Math.max(0, Number(summary.netPay) || 0),
@@ -512,6 +525,11 @@ export function buildPerformanceEvaluation(contractStats = createContractStats()
   const totalDeductions = Math.max(0, Number(contractStats.totalDeductions) || 0);
   const crashes = Math.max(0, Number(contractStats.crashes) || 0);
   const towFees = Math.max(0, Number(contractStats.towFees) || 0);
+  const maintenanceFees = Math.max(0, Number(contractStats.maintenanceFees) || 0);
+  const fuelServiceFees = Math.max(
+    0,
+    Number(contractStats.fuelServiceFees) || towFees + maintenanceFees,
+  );
   const highestKesslerMeter = clamp(
     Number(contractStats.highestKesslerMeter) || 0,
     0,
@@ -522,7 +540,7 @@ export function buildPerformanceEvaluation(contractStats = createContractStats()
   const taskScore = repairsCompleted * 120 + debrisCleared * 145;
   const payScore = Math.round(netPay * 0.55 + companyValue * 0.18);
   const stabilityScore = Math.round((100 - highestKesslerMeter) * 4);
-  const penaltyScore = crashes * 220 + towFees;
+  const penaltyScore = crashes * 220 + fuelServiceFees;
   const finalScore = taskScore + payScore + stabilityScore - penaltyScore;
   const rank = getPerformanceRank(finalScore);
 
@@ -536,6 +554,8 @@ export function buildPerformanceEvaluation(contractStats = createContractStats()
     companyValue,
     crashes,
     towFees,
+    maintenanceFees,
+    fuelServiceFees,
     bestNetShift: Math.max(0, Number(contractStats.bestNetShift) || 0),
     highestKesslerMeter,
     finalScore,
@@ -573,6 +593,8 @@ export function resetSessionStats(sessionStats) {
   sessionStats.debrisCleared = 0;
   sessionStats.crashes = 0;
   sessionStats.towFees = 0;
+  sessionStats.maintenanceFees = 0;
+  sessionStats.fuelServiceFees = 0;
   sessionStats.runContext = {
     kesslerMeter: 0,
     activeDebrisCount: 0,

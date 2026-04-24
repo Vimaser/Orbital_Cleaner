@@ -1,5 +1,3 @@
-
-
 import * as THREE from 'three'
 
 export function createCameraState() {
@@ -9,6 +7,7 @@ export function createCameraState() {
     smoothedCameraUp: new THREE.Vector3(0, 1, 0),
     tempForward: new THREE.Vector3(),
     lookAheadOffset: new THREE.Vector3(),
+    emergencyDriftOffset: new THREE.Vector3(),
   }
 }
 
@@ -20,6 +19,11 @@ export function updateCamera(camera, player, playerState, state, config) {
     cameraLookLerp,
     cameraTargetLerp,
     forwardLookDistance,
+    emergencyPowerActive = false,
+    emergencyCameraFollowMultiplier = 0.42,
+    emergencyCameraLookMultiplier = 0.48,
+    emergencyCameraTargetMultiplier = 0.5,
+    emergencyCameraDriftAmount = 0.18,
   } = config
 
   const {
@@ -28,6 +32,7 @@ export function updateCamera(camera, player, playerState, state, config) {
     smoothedCameraUp,
     tempForward,
     lookAheadOffset,
+    emergencyDriftOffset,
   } = state
 
   const radialDirection = player.position.clone().normalize()
@@ -35,7 +40,23 @@ export function updateCamera(camera, player, playerState, state, config) {
 
   const backward = tempForward.clone().multiplyScalar(-1)
 
-  smoothedCameraTarget.lerp(player.position, cameraTargetLerp)
+  const activeCameraFollowLerp = emergencyPowerActive
+    ? cameraFollowLerp * emergencyCameraFollowMultiplier
+    : cameraFollowLerp
+  const activeCameraLookLerp = emergencyPowerActive
+    ? cameraLookLerp * emergencyCameraLookMultiplier
+    : cameraLookLerp
+  const activeCameraTargetLerp = emergencyPowerActive
+    ? cameraTargetLerp * emergencyCameraTargetMultiplier
+    : cameraTargetLerp
+
+  const sideDrift = new THREE.Vector3()
+    .crossVectors(smoothedCameraUp, tempForward)
+    .normalize()
+    .multiplyScalar(emergencyPowerActive ? emergencyCameraDriftAmount : 0)
+  emergencyDriftOffset.lerp(sideDrift, emergencyPowerActive ? 0.035 : 0.12)
+
+  smoothedCameraTarget.lerp(player.position, activeCameraTargetLerp)
   smoothedCameraUp.lerp(radialDirection, 0.1).normalize()
 
   const desiredPosition = smoothedCameraTarget
@@ -43,7 +64,8 @@ export function updateCamera(camera, player, playerState, state, config) {
     .add(backward.multiplyScalar(cameraDistance))
     .add(smoothedCameraUp.clone().multiplyScalar(cameraHeight))
 
-  camera.position.lerp(desiredPosition, cameraFollowLerp)
+  desiredPosition.add(emergencyDriftOffset)
+  camera.position.lerp(desiredPosition, activeCameraFollowLerp)
 
   lookAheadOffset.copy(tempForward).multiplyScalar(forwardLookDistance)
   const desiredLookTarget = smoothedCameraTarget
@@ -51,7 +73,7 @@ export function updateCamera(camera, player, playerState, state, config) {
     .add(lookAheadOffset)
     .add(smoothedCameraUp.clone().multiplyScalar(0.5))
 
-  smoothedLookTarget.lerp(desiredLookTarget, cameraLookLerp)
+  smoothedLookTarget.lerp(desiredLookTarget.add(emergencyDriftOffset), activeCameraLookLerp)
 
   camera.up.copy(smoothedCameraUp)
   camera.lookAt(smoothedLookTarget)

@@ -23,6 +23,9 @@ const gamepadBindings = {
   // Tracker mode toggle (keyboard M, gamepad Y / Triangle)
   KeyM: { button: 3 },
 
+  // Emergency tow (keyboard T, gamepad X / Square)
+  KeyT: { button: 2 },
+
   // Boost
   ShiftLeft: { buttons: [5, 7] },
   ShiftRight: { buttons: [5, 7] },
@@ -33,6 +36,9 @@ const gamepadBindings = {
 
   // Back / cancel in menus (Circle / B)
   Escape: { buttons: [1] },
+
+  // Ship menu / tilde menu (keyboard ` / ~, gamepad Select / View / Share)
+  Backquote: { button: 8 },
 
   // Pause / start button during gameplay
   Pause: { button: 9 },
@@ -244,6 +250,10 @@ export function applyVirtualStateToKeys(keys) {
       keys.m = !!value;
     }
 
+    if (code === "KeyT") {
+      keys.t = !!value;
+    }
+
     if (code === "ShiftLeft" || code === "ShiftRight" || code === "Shift") {
       keys.shift = !!(virtualState.ShiftLeft || virtualState.ShiftRight || virtualState.Shift);
       keys.Shift = !!(virtualState.ShiftLeft || virtualState.ShiftRight || virtualState.Shift);
@@ -273,6 +283,13 @@ export function applyVirtualStateToKeys(keys) {
 
     if (code === "Escape") {
       keys.escape = !!value;
+    }
+
+    if (code === "Backquote") {
+      keys.backquote = !!value;
+      keys.Backquote = !!value;
+      keys["`"] = !!value;
+      keys["~"] = !!value;
     }
 
     if (code === "Pause") {

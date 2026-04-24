@@ -327,6 +327,38 @@ function drawDebrisTargetingReticle(ctx, centerX, centerY, targetingUi) {
   ctx.restore();
 }
 
+// Circle back and adjust panel size.
+function drawEmergencyTowPanel(ctx, canvas) {
+  const panelW = 520;
+  const panelH = 88;
+  const x = Math.max(18, (canvas.width - panelW) * 0.5);
+  const y = canvas.height - panelH - 18;
+
+  ctx.save();
+  ctx.fillStyle = "rgba(22, 5, 5, 0.88)";
+  ctx.strokeStyle = "rgba(255, 110, 80, 0.95)";
+  ctx.lineWidth = 2;
+  ctx.shadowBlur = 18;
+  ctx.shadowColor = "rgba(255, 80, 50, 0.38)";
+  ctx.fillRect(x, y, panelW, panelH);
+  ctx.strokeRect(x, y, panelW, panelH);
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "rgba(255, 145, 105, 0.98)";
+  ctx.font = "bold 15px monospace";
+  ctx.fillText("EMERGENCY SYSTEMS ACTIVATED", x + 18, y + 24);
+
+  ctx.fillStyle = "rgba(255, 220, 190, 0.94)";
+  ctx.font = "13px monospace";
+  ctx.fillText("LOW POWER MODE: LIMITED THRUST / DEGRADED TURNING", x + 18, y + 46);
+
+  ctx.fillStyle = "rgba(190, 240, 255, 0.96)";
+  ctx.font = "12px monospace";
+  ctx.fillText("T / X / CLICK: REQUEST TOW  (-900 CR)", x + 18, y + 68);
+  ctx.fillText("RETURN TO ISS: LIMP RECOVERY  (-225 CR)", x + 292, y + 68);
+  ctx.restore();
+}
+
 export function drawOrbitalHud(hud, data) {
   const { orbitHudCanvas, orbitHudCtx, infoHudCanvas, infoHudCtx, projected } =
     hud;
@@ -347,6 +379,7 @@ export function drawOrbitalHud(hud, data) {
     orbitalRisk,
     serviceBacklog,
     playerAccount,
+    emergencyPowerActive = false,
   } = data;
 
   let apoPoint = null;
@@ -417,7 +450,10 @@ export function drawOrbitalHud(hud, data) {
 
   ctx.clearRect(0, 0, w, h);
   textCtx.clearRect(0, 0, tw, th);
+  const emergencyHudAlpha = emergencyPowerActive ? 0.28 : 1;
 
+  ctx.save();
+  ctx.globalAlpha = emergencyHudAlpha;
   ctx.fillStyle = "rgba(4, 16, 22, 0.32)";
   ctx.beginPath();
   ctx.arc(center.x, center.y, 108, 0, Math.PI * 2);
@@ -741,6 +777,7 @@ export function drawOrbitalHud(hud, data) {
   ctx.lineTo(playerPoint.x, playerPoint.y + 11);
   ctx.stroke();
 
+  ctx.restore();
   const stationPoint = projectOrbitalPointToHud(
     station.position,
     center,
@@ -749,10 +786,26 @@ export function drawOrbitalHud(hud, data) {
     playerState,
     hud,
   );
-  ctx.fillStyle = "#4dfff2";
+  ctx.save();
+  ctx.fillStyle = emergencyPowerActive ? "#ffffff" : "#4dfff2";
+  ctx.shadowBlur = emergencyPowerActive ? 18 : 0;
+  ctx.shadowColor = "rgba(120,255,255,0.95)";
   ctx.beginPath();
-  ctx.arc(stationPoint.x, stationPoint.y, 4.5, 0, Math.PI * 2);
+  ctx.arc(stationPoint.x, stationPoint.y, emergencyPowerActive ? 7 : 4.5, 0, Math.PI * 2);
   ctx.fill();
+
+  if (emergencyPowerActive) {
+    ctx.strokeStyle = "rgba(120,255,255,0.95)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(stationPoint.x, stationPoint.y, 15, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(190,255,255,0.98)";
+    ctx.font = "bold 12px monospace";
+    ctx.fillText("ISS", stationPoint.x + 13, stationPoint.y - 10);
+  }
+  ctx.restore();
 
   for (const satellite of satellites) {
     const satPoint = projectOrbitalPointToHud(
@@ -1017,6 +1070,9 @@ export function drawOrbitalHud(hud, data) {
       textCtx.fillText("WND: PERI BURN ↑", rightColX, orbitColY + 72);
     }
   }
+  if (emergencyPowerActive) {
+    drawEmergencyTowPanel(textCtx, infoHudCanvas);
+  }
 }
 
 function getKesslerDisplayState(kesslerState) {
@@ -1135,6 +1191,7 @@ export function drawRadar(hud, data) {
     scanRadius,
     fuelState,
     kesslerState,
+    emergencyPowerActive = false,
   } = data;
 
   const ctx = radarCtx;
@@ -1147,6 +1204,8 @@ export function drawRadar(hud, data) {
   if (hud.radarSweepAngle > Math.PI * 2) hud.radarSweepAngle -= Math.PI * 2;
 
   ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.globalAlpha = emergencyPowerActive ? 0.26 : 1;
 
   ctx.fillStyle = "rgba(14, 44, 18, 0.72)";
   ctx.beginPath();
@@ -1216,6 +1275,31 @@ export function drawRadar(hud, data) {
   }
 
   drawRadarObject(station.position, "#6efff1", 5);
+  ctx.restore();
+
+  if (emergencyPowerActive) {
+    ctx.save();
+    ctx.fillStyle = "rgba(6, 18, 22, 0.74)";
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, 104, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(120,255,255,0.95)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, 104, 0, Math.PI * 2);
+    ctx.stroke();
+
+    drawRadarObject(station.position, "#ffffff", 7);
+
+    ctx.fillStyle = "rgba(190,255,255,0.98)";
+    ctx.font = "bold 12px monospace";
+    ctx.fillText("ISS LOCK", 18, 74);
+    ctx.fillStyle = "rgba(255,145,105,0.98)";
+    ctx.fillText("LOW POWER", 18, h - 16);
+    ctx.restore();
+    return;
+  }
 
   for (const satellite of satellites) {
     drawRadarObject(satellite.position, "#ff8b63", 4);

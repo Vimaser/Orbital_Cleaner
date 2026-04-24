@@ -1,3 +1,8 @@
+import {
+  playMenuMoveSound,
+  playMenuSelectSound,
+  playMenuBackSound,
+} from "./sound.js";
 let terminalRoot = null;
 let terminalPanel = null;
 let terminalContent = null;
@@ -33,6 +38,13 @@ const DEFAULT_UPGRADE_OPTIONS = [
   },
 ];
 
+const CONTINUE_UPGRADE_OPTION = {
+  key: "C",
+  label: "CONTINUE SHIFT REPORT",
+  description: "Skip upgrade allocation and close the terminal.",
+  terminalAction: "continue",
+};
+
 const DEFAULT_UPGRADE_REQUIREMENT_STEPS = [0, 200, 450, 700, 1000, 1350];
 
 function getUpgradeRequirementSteps(terminalData) {
@@ -60,6 +72,10 @@ function getUpgradeRequiredNet(option, terminalData) {
 }
 
 function isUpgradeUnlocked(option, terminalData) {
+  if (option?.terminalAction === "continue") {
+    return true;
+  }
+
   return (
     getUpgradeCurrentNet(terminalData) >=
     getUpgradeRequiredNet(option, terminalData)
@@ -85,9 +101,11 @@ function formatDeductionLines(deductions) {
 }
 
 function getUpgradeOptions(terminalData) {
-  return Array.isArray(terminalData?.upgradeOptions)
+  const baseOptions = Array.isArray(terminalData?.upgradeOptions)
     ? terminalData.upgradeOptions.slice(0, 3)
     : DEFAULT_UPGRADE_OPTIONS;
+
+  return [...baseOptions, CONTINUE_UPGRADE_OPTION];
 }
 
 function getSelectedUpgradeOption() {
@@ -97,6 +115,10 @@ function getSelectedUpgradeOption() {
 
 export function moveTerminalSelection(delta = 0) {
   if (activeTerminalMode !== "upgrade") {
+    if (terminalPanel) {
+      terminalPanel.scrollTop += Number(delta) * 56;
+      playMenuMoveSound();
+    }
     return;
   }
 
@@ -104,9 +126,13 @@ export function moveTerminalSelection(delta = 0) {
   if (!options.length) {
     return;
   }
-
+  const previousIndex = selectedUpgradeIndex;
   selectedUpgradeIndex =
     (selectedUpgradeIndex + Number(delta) + options.length) % options.length;
+
+  if (selectedUpgradeIndex !== previousIndex) {
+    playMenuMoveSound();
+  }
 
   if (terminalContent && activeTerminalData) {
     renderUpgradeContent(activeTerminalData);
@@ -120,11 +146,21 @@ export function confirmTerminalAction() {
 
   if (activeTerminalMode === "upgrade") {
     const option = getSelectedUpgradeOption();
+
+    if (option?.terminalAction === "continue") {
+      playMenuBackSound();
+      if (typeof activeTerminalData?.onContinue === "function") {
+        activeTerminalData.onContinue();
+      }
+      return;
+    }
+
     if (
       option &&
       isUpgradeUnlocked(option, activeTerminalData) &&
       typeof activeTerminalData?.onUpgradeSelect === "function"
     ) {
+      playMenuSelectSound();
       activeTerminalData.onUpgradeSelect(option, selectedUpgradeIndex);
     }
     return;
@@ -136,6 +172,7 @@ export function confirmTerminalAction() {
   }
 
   if (typeof activeTerminalData?.onContinue === "function") {
+    playMenuSelectSound();
     activeTerminalData.onContinue();
   }
 }
@@ -160,15 +197,23 @@ function bindTerminalInteractions() {
 
       if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
         event.preventDefault();
+        const previousIndex = selectedUpgradeIndex;
         selectedUpgradeIndex =
           (selectedUpgradeIndex - 1 + options.length) % options.length;
+        if (selectedUpgradeIndex !== previousIndex) {
+          playMenuMoveSound();
+        }
         renderUpgradeContent(activeTerminalData);
         return;
       }
 
       if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
         event.preventDefault();
+        const previousIndex = selectedUpgradeIndex;
         selectedUpgradeIndex = (selectedUpgradeIndex + 1) % options.length;
+        if (selectedUpgradeIndex !== previousIndex) {
+          playMenuMoveSound();
+        }
         renderUpgradeContent(activeTerminalData);
         return;
       }
@@ -179,6 +224,18 @@ function bindTerminalInteractions() {
         return;
       }
 
+      return;
+    }
+
+    if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") {
+      event.preventDefault();
+      moveTerminalSelection(-1);
+      return;
+    }
+
+    if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") {
+      event.preventDefault();
+      moveTerminalSelection(1);
       return;
     }
 
@@ -217,12 +274,15 @@ function renderUpgradeContent(terminalData) {
     const label = option?.label || "UNNAMED UPGRADE";
     const description = option?.description || "No description available.";
     const isSelected = index === selectedUpgradeIndex;
+    const isContinueOption = option?.terminalAction === "continue";
     const requiredNet = getUpgradeRequiredNet(option, terminalData);
     const currentNet = getUpgradeCurrentNet(terminalData);
     const unlocked = isUpgradeUnlocked(option, terminalData);
-    const statusLine = unlocked
-      ? "AUTHORIZED"
-      : `LOCKED — REQUIRES ${requiredNet} CR (CURRENT: ${currentNet} CR)`;
+    const statusLine = isContinueOption
+      ? "AVAILABLE"
+      : unlocked
+        ? "AUTHORIZED"
+        : `LOCKED — REQUIRES ${requiredNet} CR (CURRENT: ${currentNet} CR)`;
 
     const button = document.createElement("button");
     button.type = "button";
@@ -239,13 +299,16 @@ function renderUpgradeContent(terminalData) {
     button.style.fontFamily = "monospace";
     button.style.fontSize = "14px";
     button.style.lineHeight = "1.45";
-    button.style.cursor = unlocked ? "pointer" : "not-allowed";
+    button.style.cursor = unlocked || isContinueOption ? "pointer" : "not-allowed";
     button.style.boxShadow = isSelected
       ? "0 0 0 1px rgba(120, 180, 220, 0.25) inset"
       : "none";
     button.innerHTML = `<div>[${key}] ${label}</div><div style="opacity:0.82; margin-top:4px;">${description}</div><div style="opacity:${unlocked ? "0.9" : "0.72"}; margin-top:6px;">${statusLine}</div>`;
 
     button.addEventListener("mouseenter", () => {
+      if (selectedUpgradeIndex !== index) {
+        playMenuMoveSound();
+      }
       selectedUpgradeIndex = index;
     });
 
@@ -254,11 +317,20 @@ function renderUpgradeContent(terminalData) {
       event.stopPropagation();
       selectedUpgradeIndex = index;
 
+      if (option?.terminalAction === "continue") {
+        playMenuBackSound();
+        if (typeof terminalData?.onContinue === "function") {
+          terminalData.onContinue();
+        }
+        return;
+      }
+
       if (!isUpgradeUnlocked(option, terminalData)) {
         renderUpgradeContent(terminalData);
         return;
       }
 
+      playMenuSelectSound();
       if (typeof terminalData?.onUpgradeSelect === "function") {
         terminalData.onUpgradeSelect(option, index);
       }
@@ -273,7 +345,7 @@ function renderUpgradeContent(terminalData) {
   footer.style.whiteSpace = "pre-wrap";
   footer.style.marginTop = "18px";
   footer.textContent =
-    "CLICK OR PRESS [ENTER] TO APPLY AUTHORIZED UPGRADE\nW/S, ARROWS, OR CONTROLLER TO CHANGE SELECTION";
+    "CLICK OR PRESS [ENTER] TO APPLY AUTHORIZED UPGRADE OR CONTINUE\nW/S, ARROWS, OR CONTROLLER TO CHANGE SELECTION";
   terminalContent.appendChild(footer);
 }
 
@@ -334,21 +406,22 @@ function ensureTerminalElements() {
 }
 
 function formatUpgradeScreen(terminalData) {
-  const options = Array.isArray(terminalData.upgradeOptions)
-    ? terminalData.upgradeOptions.slice(0, 3)
-    : DEFAULT_UPGRADE_OPTIONS;
+  const options = getUpgradeOptions(terminalData);
 
   const optionLines = options
     .map((option, index) => {
       const key = option?.key || `${index + 1}`;
       const label = option?.label || "UNNAMED UPGRADE";
       const description = option?.description || "No description available.";
+      const isContinueOption = option?.terminalAction === "continue";
       const requiredNet = getUpgradeRequiredNet(option, terminalData);
       const currentNet = getUpgradeCurrentNet(terminalData);
       const unlocked = isUpgradeUnlocked(option, terminalData);
-      const statusLine = unlocked
-        ? "AUTHORIZED"
-        : `LOCKED — REQUIRES ${requiredNet} CR (CURRENT: ${currentNet} CR)`;
+      const statusLine = isContinueOption
+        ? "AVAILABLE"
+        : unlocked
+          ? "AUTHORIZED"
+          : `LOCKED — REQUIRES ${requiredNet} CR (CURRENT: ${currentNet} CR)`;
       return `[${key}] ${label}\n    ${description}\n    ${statusLine}`;
     })
     .join("\n\n");
@@ -361,7 +434,7 @@ function formatUpgradeScreen(terminalData) {
     optionLines,
     ...(activeFooterLine ? ["", activeFooterLine] : []),
     "",
-    "CLICK OR PRESS [1], [2], OR [3] TO APPLY AUTHORIZED UPGRADE",
+    "CLICK OR PRESS [ENTER] TO APPLY AUTHORIZED UPGRADE OR CONTINUE",
   ].join("\n");
 }
 
@@ -390,12 +463,14 @@ function formatSummary(terminalData) {
       "SHIP DAMAGE REPORT",
       `Crashes                         ${damage.crashes ?? 0}`,
       `Atmospheric Exposure           ${Math.round(damage.atmosphereExposureSeconds ?? 0)}s`,
-      `Emergency Tow                  ${damage.towedThisShift ? "YES" : "NO"}`,
+      `Fuel System Status            ${damage.emergencyMaintenanceThisShift ? "LIMP RECOVERY" : damage.towedThisShift ? "TOWED" : "NOMINAL"}`,
       "",
       "DAMAGE COST",
       `Crash Damage                   -${damage.crashCost ?? 0} CR`,
       `Stress Damage                  -${damage.atmosphereCost ?? 0} CR`,
-      `Tow Charge                     -${damage.towCost ?? 0} CR`,
+      `Emergency Tow Fee              -${damage.towCost ?? 0} CR`,
+      `Emergency Maintenance Fee      -${damage.maintenanceCost ?? 0} CR`,
+      `Limp Systems Recovery          ${damage.emergencyMaintenanceThisShift ? "SUCCESS" : "N/A"}`,
       `Total Damage                   -${damage.totalDamageCost ?? 0} CR`,
     ];
   }

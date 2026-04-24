@@ -11,11 +11,16 @@ const volumeState = {
 };
 
 let audioUnlocked = false;
+let pendingMenuMusic = false;
+
+const MENU_MOVE_SOUND_COOLDOWN_MS = 70;
+let lastMenuMoveSoundTime = 0;
 
 const musicState = {
   ambient: null,
   radio: null,
   space: null,
+  menu: null,
   radioEnabled: true,
 };
 
@@ -57,11 +62,52 @@ function updateAllSoundVolumes() {
   Object.keys(sounds).forEach(updateActiveSoundVolume);
 }
 
+function primeLoadedAudio() {
+  Object.values(sounds).forEach((audio) => {
+    if (!audio) return;
+
+    const previousMuted = audio.muted;
+    const previousVolume = audio.volume;
+
+    audio.muted = true;
+    audio.volume = 0;
+
+    const playAttempt = audio.play();
+
+    if (playAttempt?.then) {
+      playAttempt
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.muted = previousMuted;
+          audio.volume = previousVolume;
+        })
+        .catch(() => {
+          audio.muted = previousMuted;
+          audio.volume = previousVolume;
+        });
+    } else {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.muted = previousMuted;
+      audio.volume = previousVolume;
+    }
+  });
+}
+
 function unlockAudio() {
   if (audioUnlocked) return;
   audioUnlocked = true;
+  primeLoadedAudio();
+
+  if (pendingMenuMusic) {
+    startMenuMusic();
+  }
 }
 
+window.addEventListener("pointerdown", unlockAudio, { once: true });
+window.addEventListener("mousedown", unlockAudio, { once: true });
+window.addEventListener("touchstart", unlockAudio, { once: true });
 window.addEventListener("click", unlockAudio, { once: true });
 window.addEventListener("keydown", unlockAudio, { once: true });
 
@@ -218,6 +264,36 @@ export function startAmbient(name) {
   startLoop(name);
 }
 
+export function startMenuMusic() {
+  const sound = sounds.menuTheme;
+  if (!sound) return;
+
+  if (!audioUnlocked) {
+    pendingMenuMusic = true;
+    return;
+  }
+
+  pendingMenuMusic = false;
+
+  if (musicState.menu === "menuTheme") return;
+
+  if (musicState.menu) {
+    stopLoop(musicState.menu);
+  }
+
+  musicState.menu = "menuTheme";
+  startLoop("menuTheme");
+}
+
+export function stopMenuMusic() {
+  pendingMenuMusic = false;
+
+  if (!musicState.menu) return;
+
+  stopLoop(musicState.menu);
+  musicState.menu = null;
+}
+
 export function startRadio(name) {
   if (!audioUnlocked) return;
   const sound = sounds[name];
@@ -238,6 +314,15 @@ export function stopRadio() {
   if (musicState.radio) {
     stopLoop(musicState.radio);
     musicState.radio = null;
+  }
+}
+
+export function stopRadioAndSpaceMusic() {
+  stopRadio();
+
+  if (musicState.space) {
+    stopLoop(musicState.space);
+    musicState.space = null;
   }
 }
 
@@ -268,4 +353,32 @@ export function setRadioEnabled(enabled, radioTrack, spaceTrack) {
 
 export function isLoopPlaying(name) {
   return !!loops[name];
+}
+
+export function playMenuMoveSound() {
+  if (!audioUnlocked) {
+    unlockAudio();
+  }
+  const now = performance.now();
+
+  if (now - lastMenuMoveSoundTime < MENU_MOVE_SOUND_COOLDOWN_MS) {
+    return;
+  }
+
+  lastMenuMoveSoundTime = now;
+  playSound("menuMove", { volume: 0.5 });
+}
+
+export function playMenuSelectSound() {
+  if (!audioUnlocked) {
+    unlockAudio();
+  }
+  playSound("menuSelect", { volume: 0.65 });
+}
+
+export function playMenuBackSound() {
+  if (!audioUnlocked) {
+    unlockAudio();
+  }
+  playSound("menuBack", { volume: 0.6 });
 }

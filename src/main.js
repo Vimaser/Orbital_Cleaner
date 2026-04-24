@@ -52,6 +52,11 @@ import {
   updateFuelSystem,
   canBoost,
   refuelFuelState,
+  isEmergencyPowerActive,
+  requestEmergencyTow,
+  markEmergencyRecovery,
+  FUEL_TOW_COST,
+  FUEL_EMERGENCY_MAINTENANCE_COST,
 } from "./fuelSystem.js";
 import {
   createSessionStats,
@@ -64,6 +69,7 @@ import {
   isPerformanceEvaluationEligible,
   isPerformanceEvaluationMandatory,
   completePerformanceEvaluation,
+  buildPerformanceEvaluation,
   buildUpgradeOptions,
   setTerminalMode,
   tryApplyTerminalUpgrade,
@@ -109,6 +115,7 @@ import {
   registerCrash,
   trackAtmosphereExposure,
   markFuelDepleted,
+  markEmergencyMaintenance,
   buildDamageReport,
 } from "./damageSystem.js";
 import {
@@ -131,6 +138,8 @@ import {
   toggleMenuVisible,
   setRadioState,
   setPerformanceReviewState,
+  moveMenuSelection as moveShipMenuSelection,
+  confirmMenuSelection as confirmShipMenuSelection,
 } from "./menuUI.js";
 import {
   createMainMenu,
@@ -150,6 +159,8 @@ import {
   stopLoop,
   stopAllLoops,
   startAmbient,
+  startMenuMusic,
+  stopMenuMusic,
   setSfxVolume,
   setMusicVolume,
   getSfxVolume,
@@ -193,6 +204,10 @@ const SOUND_ASSETS = {
   towSnap: new URL("../assets/sfx/tow_snap.ogg", import.meta.url).href,
   boost: new URL("../assets/sfx/boost.ogg", import.meta.url).href,
   beep: new URL("../assets/sfx/beep.ogg", import.meta.url).href,
+  powerDown: new URL("../assets/sfx/powerDown.ogg", import.meta.url).href,
+  menuMove: new URL("../assets/sfx/menuMove.ogg", import.meta.url).href,
+  menuSelect: new URL("../assets/sfx/menuSelect.ogg", import.meta.url).href,
+  menuBack: new URL("../assets/sfx/menuBack.ogg", import.meta.url).href,
   critHeat: new URL("../assets/sfx/critHeat.ogg", import.meta.url).href,
   proxAlarm: new URL("../assets/sfx/proxAlarm.ogg", import.meta.url).href,
   lowFuelVoice: new URL("../assets/sfx/lowfuel_voice.ogg", import.meta.url)
@@ -220,6 +235,7 @@ const MUSIC_ASSETS = {
     "../assets/music/Deep-Space-Atmosphere.ogg",
     import.meta.url,
   ).href,
+  menuTheme: new URL("../assets/music/menuTheme.ogg", import.meta.url).href,
 };
 
 const UI_ASSETS = {
@@ -249,6 +265,10 @@ loadSound("beep", SOUND_ASSETS.beep, {
   volume: 0.62,
   group: "sfx",
 });
+loadSound("powerDown", SOUND_ASSETS.powerDown, { volume: 0.78 });
+loadSound("menuMove", SOUND_ASSETS.menuMove, { volume: 0.7 });
+loadSound("menuSelect", SOUND_ASSETS.menuSelect, { volume: 0.85 });
+loadSound("menuBack", SOUND_ASSETS.menuBack, { volume: 0.8 });
 loadSound("critHeat", SOUND_ASSETS.critHeat, { volume: 0.72 });
 loadSound("proxAlarm", SOUND_ASSETS.proxAlarm, { volume: 0.62 });
 loadSound("lowFuelVoice", SOUND_ASSETS.lowFuelVoice, { volume: 0.78 });
@@ -278,6 +298,11 @@ loadSound("spaceAmbience", MUSIC_ASSETS.spaceAmbience, {
 loadSound("deepSpace", MUSIC_ASSETS.deepSpace, {
   loop: true,
   volume: 0.38,
+  group: "music",
+});
+loadSound("menuTheme", MUSIC_ASSETS.menuTheme, {
+  loop: true,
+  volume: 0.42,
   group: "music",
 });
 
@@ -317,6 +342,8 @@ const controllerEdgeState = {
   left: false,
   right: false,
   mission: false,
+  tow: false,
+  shipMenu: false,
 };
 
 const MISSION_FOCUS_ORDER = ["REPAIR", "DEBRIS", "OPEN"];
@@ -386,6 +413,9 @@ function getScaledUpgradeRequiredNet(option) {
   return baseRequiredNet + scalingRequirement;
 }
 const RESPAWN_DELAY_SECONDS = 0.55;
+const EMERGENCY_POWER_SPEED_MULTIPLIER = 0.1;
+const EMERGENCY_POWER_TURN_MULTIPLIER = 0.34;
+const EMERGENCY_POWER_ALTITUDE_MULTIPLIER = 0.42;
 
 const COMBO_CONFIG = {
   chainWindow: 10,
@@ -590,7 +620,7 @@ function ensureCreditsOverlay() {
     <section style="margin-bottom:22px;">
       <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Sound Effects</h2>
       <div style="font-size:13px; color:rgba(214,238,245,0.92);">
-        Some sound effects are licensed from Envato Elements.
+        Some sound effects are sourced from Envato Elements and Pixabay (royalty-free).
       </div>
     </section>
 
@@ -605,7 +635,8 @@ function ensureCreditsOverlay() {
       <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Game & Development</h2>
       <div style="font-size:13px; color:rgba(214,238,245,0.92);">
         A game by <strong>Trei Feske</strong><br>
-        <strong>Tiger Software Developers LLC</strong>
+        <strong>Tiger Software Developers LLC</strong><br>
+        Built using custom Three.js systems, with components refined from prior projects (Loong)
       </div>
     </section>
 
@@ -614,6 +645,13 @@ function ensureCreditsOverlay() {
       <div style="font-size:13px; color:rgba(214,238,245,0.92);">
         Music by <strong>Floyd & Trei Feske</strong><br>
         Some compositions (instrumental/audio) were generated using AI tools.
+      </div>
+    </section>
+    <section style="margin-bottom:24px;">
+      <h2 style="font-size:16px; color:#f3fbff; margin:0 0 10px; letter-spacing:0.08em; text-transform:uppercase;">Archival Audio</h2>
+      <div style="font-size:13px; color:rgba(214,238,245,0.92);">
+        Includes NASA public domain audio recordings, such as Apollo mission communications and launch audio.<br>
+        Source: NASA Image and Video Library
       </div>
     </section>
 
@@ -657,6 +695,8 @@ function isPerformanceOverlayVisible() {
 }
 
 function syncPerformanceReviewMenuState() {
+  const currentEvaluation = buildPerformanceEvaluation(contractStats);
+
   setPerformanceReviewState({
     shiftsSinceEvaluation: performanceEvaluationState.shiftsSinceEvaluation,
     evaluationEligible: isPerformanceEvaluationEligible(
@@ -665,6 +705,7 @@ function syncPerformanceReviewMenuState() {
     evaluationMandatory: isPerformanceEvaluationMandatory(
       performanceEvaluationState,
     ),
+    currentRankLabel: currentEvaluation.rankLabel,
   });
 }
 
@@ -1032,6 +1073,7 @@ function finishBootSequence() {
   }
 
   showMainMenu();
+  startMenuMusic();
   setUIState(UI_STATE.MENU);
 }
 
@@ -1142,6 +1184,9 @@ function buildInteractiveUpgradeTerminalData(upgradeOptions, summaryData = {}) {
     }),
     onUpgradeSelect: (option) => {
       applyUpgradeFromTerminalOption(option);
+    },
+    onContinue: () => {
+      closeShiftTerminalFlow();
     },
   };
 }
@@ -1300,6 +1345,10 @@ window.addEventListener("keydown", (e) => {
     cycleMissionFocus();
   }
 
+  if (!e.repeat && (key === "t" || e.code === "KeyT")) {
+    requestFullEmergencyTow();
+    return;
+  }
   if (!e.repeat && shipMenuState.open && (key === "e" || e.code === "KeyE")) {
     showPerformanceEvaluation({
       mandatory: isPerformanceEvaluationMandatory(performanceEvaluationState),
@@ -1376,6 +1425,10 @@ window.addEventListener("keyup", (e) => {
   keys[e.code] = false;
 });
 
+window.addEventListener("radioToggleRequested", () => {
+  shipMenuState.radioEnabled = !shipMenuState.radioEnabled;
+  syncRadioState();
+});
 window.addEventListener("performanceReviewRequested", () => {
   showPerformanceEvaluation({
     mandatory: isPerformanceEvaluationMandatory(performanceEvaluationState),
@@ -1393,6 +1446,7 @@ createMenuUI({
   evaluationMandatory: isPerformanceEvaluationMandatory(
     performanceEvaluationState,
   ),
+  currentRankLabel: buildPerformanceEvaluation(contractStats).rankLabel,
 });
 mobileControls.setPauseHandler(handleMobilePauseRequest);
 
@@ -1545,6 +1599,7 @@ function syncGameplayAudio({
   isBoosting = false,
   inAtmosphere = false,
   fuelAmount = 100,
+  emergencyPowerActive = false,
 }) {
   if (isBoosting) {
     startLoop("boost");
@@ -1558,13 +1613,21 @@ function syncGameplayAudio({
     stopLoop("burn");
   }
 
-  if (typeof fuelAmount === "number" && fuelAmount <= 10) {
+  if (
+    typeof fuelAmount === "number" &&
+    fuelAmount <= 10 &&
+    !emergencyPowerActive
+  ) {
     startLoop("beep");
   } else {
     stopLoop("beep");
   }
 
-  if (typeof fuelAmount === "number" && fuelAmount <= 20) {
+  if (
+    typeof fuelAmount === "number" &&
+    fuelAmount <= 20 &&
+    !emergencyPowerActive
+  ) {
     if (!audioState.lowFuelVoicePlayed) {
       playSound("lowFuelVoice");
       audioState.lowFuelVoicePlayed = true;
@@ -1597,6 +1660,31 @@ function getClosestSatelliteDistance(player, satellites) {
   }
 
   return closestDistance;
+}
+
+function requestFullEmergencyTow() {
+  if (!isEmergencyPowerActive(fuelState) || shiftState.terminalOpen) {
+    return false;
+  }
+
+  const towCost = requestEmergencyTow(fuelState);
+  markFuelDepleted(damageState, towCost);
+  playSound("towSnap");
+  spawnFloatingText(
+    scene,
+    player.position,
+    `EMERGENCY TOW -${FUEL_TOW_COST} CR`,
+    player,
+  );
+
+  const stationDirection = station.position.clone().normalize();
+  player.position.copy(stationDirection.multiplyScalar(planetRadius + 10));
+  playerState.radiusCurrent = planetRadius + 10;
+  playerState.targetRadius = planetRadius + 10;
+  playerState.velocity.set(0, 0, 0);
+  stopGameplayLoops();
+
+  return true;
 }
 
 function closeShiftTerminalFlow() {
@@ -1746,6 +1834,7 @@ function startGameFromMainMenu(options = {}) {
   appState.started = true;
   hideTrainingOverlay();
   hideMainMenu();
+  stopMenuMusic();
   setUIState(UI_STATE.GAME);
   pauseState.paused = false;
   shipMenuState.open = false;
@@ -1895,6 +1984,10 @@ function animate() {
     !!controllerVirtualState.ArrowRight && !controllerEdgeState.right;
   const controllerMissionPressed =
     !!controllerVirtualState.KeyM && !controllerEdgeState.mission;
+  const controllerTowPressed =
+    !!controllerVirtualState.KeyT && !controllerEdgeState.tow;
+  const controllerShipMenuPressed =
+    !!controllerVirtualState.Backquote && !controllerEdgeState.shipMenu;
 
   controllerEdgeState.enter = !!controllerVirtualState.Enter;
   controllerEdgeState.escape = !!controllerVirtualState.Escape;
@@ -1904,6 +1997,8 @@ function animate() {
   controllerEdgeState.left = !!controllerVirtualState.ArrowLeft;
   controllerEdgeState.right = !!controllerVirtualState.ArrowRight;
   controllerEdgeState.mission = !!controllerVirtualState.KeyM;
+  controllerEdgeState.tow = !!controllerVirtualState.KeyT;
+  controllerEdgeState.shipMenu = !!controllerVirtualState.Backquote;
 
   if (!appState.bootReady) {
     stopGameplayLoops();
@@ -2025,7 +2120,27 @@ function animate() {
     handleMobilePauseRequest();
   }
 
-  if (shiftState.terminalOpen) {
+  if (controllerShipMenuPressed && !shiftState.terminalOpen) {
+    shipMenuState.open = toggleMenuVisible();
+  }
+
+  if (shipMenuState.open && !shiftState.terminalOpen) {
+    if (controllerUpPressed) {
+      moveShipMenuSelection(-1);
+    }
+
+    if (controllerDownPressed) {
+      moveShipMenuSelection(1);
+    }
+
+    if (controllerEnterPressed) {
+      confirmShipMenuSelection();
+    }
+
+    if (controllerEscapePressed) {
+      shipMenuState.open = setMenuVisible(false);
+    }
+  } else if (shiftState.terminalOpen) {
     if (controllerUpPressed) {
       moveTerminalSelection(-1);
     }
@@ -2038,11 +2153,17 @@ function animate() {
       confirmTerminalAction();
     }
   } else if (controllerEnterPressed) {
-    handleConfirmRequest();
+    if (!requestFullEmergencyTow()) {
+      handleConfirmRequest();
+    }
   }
 
   if (controllerMissionPressed) {
     cycleMissionFocus();
+  }
+
+  if (controllerTowPressed) {
+    requestFullEmergencyTow();
   }
 
   const activeDebrisCount = getActiveDebrisCount(debrisManagerState);
@@ -2108,6 +2229,33 @@ function animate() {
 
   const stationDistance = player.position.distanceTo(station.position);
   const wasTerminalOpen = shiftState.terminalOpen;
+  const emergencyPowerActive = isEmergencyPowerActive(fuelState);
+
+  if (emergencyPowerActive && !player.userData._emergencyHudDebugLogged) {
+  player.userData._emergencyHudDebugLogged = true;
+  console.log("[DEBUG][EMERGENCY] active in main.js", {
+    fuelState: { ...fuelState },
+    stationDistance,
+    terminalOpen: shiftState.terminalOpen,
+  });
+}
+
+  if (
+    emergencyPowerActive &&
+    !fuelState.emergencyRecovered &&
+    !fuelState.towRequested &&
+    stationDistance <= STATION_TERMINAL_TRIGGER_DISTANCE
+  ) {
+    const maintenanceCost = markEmergencyRecovery(fuelState);
+    markEmergencyMaintenance(damageState, maintenanceCost);
+
+    spawnFloatingText(
+      scene,
+      player.position,
+      `EMERGENCY MAINTENANCE -${FUEL_EMERGENCY_MAINTENANCE_COST} CR`,
+      player,
+    );
+  }
 
   updateStationTerminalState({
     shiftState,
@@ -2121,6 +2269,14 @@ function animate() {
       summary.damageReport = damageReport;
       summary.crashes = Math.max(0, Number(damageReport.crashes ?? 0));
       summary.towFees = Math.max(0, Number(damageReport.towCost ?? 0));
+      summary.maintenanceFees = Math.max(
+        0,
+        Number(damageReport.maintenanceCost ?? 0),
+      );
+      summary.fuelServiceFees = Math.max(
+        0,
+        Number(damageReport.fuelServiceCost ?? 0),
+      );
       summary.bonusPay = shiftBonusPay;
       summary.netPay =
         (summary.netPay ?? 0) - (damageReport.totalDamageCost ?? 0);
@@ -2153,6 +2309,14 @@ function animate() {
           towFees: Math.max(
             0,
             Number(shiftSummaryForContract.damageReport?.towCost ?? 0),
+          ),
+          maintenanceFees: Math.max(
+            0,
+            Number(shiftSummaryForContract.damageReport?.maintenanceCost ?? 0),
+          ),
+          fuelServiceFees: Math.max(
+            0,
+            Number(shiftSummaryForContract.damageReport?.fuelServiceCost ?? 0),
           ),
         });
         recordCompletedShiftForEvaluation(performanceEvaluationState);
@@ -2208,6 +2372,7 @@ function animate() {
       playerState,
       playerHeatState,
       fuelState,
+      emergencyPowerActive,
       throttlePercent: playerState.throttlePercent,
       station,
       satellites,
@@ -2230,6 +2395,7 @@ function animate() {
       debrisList: debrisManagerState.debrisList,
       scanRadius,
       fuelState,
+      emergencyPowerActive,
       kesslerState: getKesslerUIState(kesslerSyndrome),
     });
     if (shouldDrawTerminalUiForFrame()) {
@@ -2303,7 +2469,10 @@ function animate() {
     });
     primaryDebris = resolvePrimaryDebris(primaryDebris);
     updateSatellites(satellites, dt, primaryDebris);
-    updateCameraSystem(camera, player, playerState, cameraState, cameraConfig);
+    updateCameraSystem(camera, player, playerState, cameraState, {
+      ...cameraConfig,
+      emergencyPowerActive,
+    });
     updateTrailSystem(trajectoryState, player.position, playerState.velocity);
     updateTrajectoryGuideSystem(
       trajectoryState,
@@ -2317,6 +2486,7 @@ function animate() {
       playerState,
       playerHeatState,
       fuelState,
+      emergencyPowerActive,
       throttlePercent: playerState.throttlePercent,
       station,
       satellites,
@@ -2339,6 +2509,7 @@ function animate() {
       debrisList: debrisManagerState.debrisList,
       scanRadius,
       fuelState,
+      emergencyPowerActive,
       kesslerState: getKesslerUIState(kesslerSyndrome),
     });
     updateEvaSystem(evaSystem, dt);
@@ -2411,6 +2582,7 @@ function animate() {
     isBoosting,
     inAtmosphere: playerState.radiusCurrent < burnRadius,
     fuelAmount,
+    emergencyPowerActive,
   });
 
   const isInAtmospherePenaltyZone = playerState.radiusCurrent < burnRadius;
@@ -2424,15 +2596,36 @@ function animate() {
     comboPenaltyState.atmospherePenaltyArmed = true;
   }
 
-  if (
-    typeof fuelAmount === "number" &&
-    fuelAmount <= 0 &&
-    !damageState.towedThisShift
-  ) {
-    markFuelDepleted(damageState);
+  if (emergencyPowerActive && !fuelState.depletionHandled) {
+    fuelState.depletionHandled = true;
+    stopLoop("beep");
+    stopLoop("boost");
+    stopRadioStation();
+    playSound("powerDown");
+    console.log("[DEBUG][EMERGENCY] depletion handled, HUD should show", {
+  emergencyPowerActive,
+  fuelState: { ...fuelState },
+});
+    spawnFloatingText(scene, player.position, "EMERGENCY POWER", player);
+    spawnFloatingText(scene, player.position, "PRESS T FOR FULL TOW", player);
   }
   updateThrottle(dt);
-  updatePlayerSystem(player, playerState, movementKeys, dt, playerConfig);
+
+  const activePlayerConfig = emergencyPowerActive
+    ? {
+        ...playerConfig,
+        baseForwardSpeed:
+          playerConfig.baseForwardSpeed * EMERGENCY_POWER_SPEED_MULTIPLIER,
+        maxForwardSpeed:
+          playerConfig.maxForwardSpeed * EMERGENCY_POWER_SPEED_MULTIPLIER,
+        yawRate: playerConfig.yawRate * EMERGENCY_POWER_TURN_MULTIPLIER,
+        altitudeChangeRate:
+          playerConfig.altitudeChangeRate * EMERGENCY_POWER_ALTITUDE_MULTIPLIER,
+        boostMultiplier: 1,
+      }
+    : playerConfig;
+
+  updatePlayerSystem(player, playerState, movementKeys, dt, activePlayerConfig);
   const burnedUpInAtmosphere = updatePlayerHeat(dt);
   if (burnedUpInAtmosphere) {
     registerCrash(damageState);
@@ -2452,7 +2645,10 @@ function animate() {
       playerHeatState.warning ||
       playerHeatState.critical,
   );
-  updateCameraSystem(camera, player, playerState, cameraState, cameraConfig);
+  updateCameraSystem(camera, player, playerState, cameraState, {
+    ...cameraConfig,
+    emergencyPowerActive,
+  });
   updatePlanet(planet, dt);
   updateSun(sun, dt, camera);
   updateMoon(moon, dt);
@@ -2937,11 +3133,12 @@ function animate() {
     keys,
     trajectoryConfig,
   );
-  drawOrbitalHud(hud, {
+drawOrbitalHud(hud, {
     player,
     playerState,
     playerHeatState,
     fuelState,
+    emergencyPowerActive,
     throttlePercent: playerState.throttlePercent,
     station,
     satellites,
@@ -2964,6 +3161,7 @@ function animate() {
     debrisList: debrisManagerState.debrisList,
     scanRadius,
     fuelState,
+    emergencyPowerActive,
     kesslerState: getKesslerUIState(kesslerSyndrome),
   });
 

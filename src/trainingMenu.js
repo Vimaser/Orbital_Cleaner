@@ -1,5 +1,39 @@
 const TRAINING_SECTIONS = [
   {
+    id: "controls",
+    title: "CONTROLS / INPUT MAP",
+    description: [
+      "CONTROLS",
+      "",
+      "Keyboard",
+      "",
+      "  W/S                 Pitch / vertical control",
+      "  A/D                 Turn left/right",
+      "  Arrow Up/Down       Throttle up/down",
+      "  Shift               Boost",
+      "  Enter               Confirm / interact",
+      "  Esc                 Back / pause",
+      "  M                   Tracker mode",
+      "  T                   Emergency tow",
+      "  ` / ~               Ship menu",
+      "",
+      "Controller",
+      "",
+      "  Left Stick          Ship control / directional movement",
+      "  Right Stick Up/Down Throttle up/down",
+      "  D-Pad Left/Right    Menu/training horizontal navigation",
+      "  D-Pad Up/Down       Throttle up/down",
+      "  Y / Triangle        Tracker mode",
+      "  X / Square          Emergency tow",
+      "  A / Cross           Confirm / interact",
+      "  B / Circle          Back / cancel",
+      "  Select/View/Share   Ship menu",
+      "  Start               Pause",
+      "  LB / RB / RT        Boost",
+    ].join("\n"),
+    video: "/assets/training/controls.webm",
+  },
+  {
     id: "repair",
     title: "SATELLITE REPAIR",
     description:
@@ -30,7 +64,7 @@ const TRAINING_SECTIONS = [
     id: "fuel",
     title: "FUEL & DOCKING",
     description:
-      "Fuel drains during your shift, and boost burns it faster. Return to the ISS before you run out or you'll be towed at a high cost.",
+      "Fuel drains during your shift, and boost burns it faster. If fuel hits zero, low power mode activates. Limp back to the ISS for a reduced maintenance fee, or request a full emergency tow with T / X / Square.",
     video: "/assets/training/fuel.webm",
   },
   {
