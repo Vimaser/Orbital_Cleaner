@@ -148,6 +148,7 @@ import {
   moveMenuSelection,
   confirmMenuAction,
   backMenuAction,
+  adjustCurrentSetting as adjustMainMenuSetting,
   isMainMenuVisible,
 } from "./mainMenu.js";
 import { createTrainingMenu } from "./trainingMenu.js";
@@ -192,6 +193,103 @@ import {
   applyKesslerImpulse,
   getKesslerUIState,
 } from "./kesslerSyndrome.js";
+
+const bootAssetLoadState = {
+  started: false,
+  settled: false,
+  loaded: 0,
+  total: 0,
+  activeUrl: "",
+  lastProgressAt: performance.now(),
+};
+
+let wavedashApiPromise = null;
+let wavedashInitSent = false;
+
+function getWavedashApi() {
+  if (!window.Wavedash) {
+    return Promise.resolve(null);
+  }
+
+  if (!wavedashApiPromise) {
+    wavedashApiPromise = Promise.resolve(window.Wavedash).catch((error) => {
+      console.warn("Wavedash SDK unavailable:", error);
+      wavedashApiPromise = null;
+      return null;
+    });
+  }
+
+  return wavedashApiPromise;
+}
+
+function updateWavedashLoadProgress(value = 0) {
+  const progress = THREE.MathUtils.clamp(Number(value) || 0, 0, 1);
+
+  getWavedashApi().then((wavedash) => {
+    if (
+      wavedash &&
+      typeof wavedash.updateLoadProgressZeroToOne === "function"
+    ) {
+      wavedash.updateLoadProgressZeroToOne(progress);
+    }
+  });
+}
+
+function initWavedashIfAvailable(retryCount = 0) {
+  if (wavedashInitSent) {
+    return;
+  }
+
+  getWavedashApi().then((wavedash) => {
+    if (wavedash && typeof wavedash.init === "function") {
+      updateWavedashLoadProgress(1);
+      wavedash.init({ debug: false });
+      wavedashInitSent = true;
+      return;
+    }
+
+    if (retryCount < 20) {
+      window.setTimeout(() => initWavedashIfAvailable(retryCount + 1), 250);
+    }
+  });
+}
+
+THREE.DefaultLoadingManager.onStart = (url, loaded, total) => {
+  bootAssetLoadState.started = true;
+  bootAssetLoadState.settled = false;
+  bootAssetLoadState.loaded = loaded;
+  bootAssetLoadState.total = total;
+  bootAssetLoadState.activeUrl = url || "";
+  bootAssetLoadState.lastProgressAt = performance.now();
+  updateWavedashLoadProgress(0.08);
+};
+
+THREE.DefaultLoadingManager.onProgress = (url, loaded, total) => {
+  bootAssetLoadState.started = true;
+  bootAssetLoadState.settled = loaded >= total;
+  bootAssetLoadState.loaded = loaded;
+  bootAssetLoadState.total = total;
+  bootAssetLoadState.activeUrl = url || "";
+  bootAssetLoadState.lastProgressAt = performance.now();
+  const loadRatio = total > 0 ? loaded / total : 0;
+  updateWavedashLoadProgress(0.08 + loadRatio * 0.72);
+};
+
+THREE.DefaultLoadingManager.onLoad = () => {
+  bootAssetLoadState.started = true;
+  bootAssetLoadState.settled = true;
+  bootAssetLoadState.loaded = Math.max(
+    bootAssetLoadState.loaded,
+    bootAssetLoadState.total,
+  );
+  bootAssetLoadState.lastProgressAt = performance.now();
+  updateWavedashLoadProgress(0.86);
+};
+
+THREE.DefaultLoadingManager.onError = (url) => {
+  console.warn("Boot asset load warning:", url);
+  bootAssetLoadState.lastProgressAt = performance.now();
+};
 
 const { scene, camera, renderer } = createScene();
 
@@ -438,6 +536,7 @@ const appState = {
   bootReady: false,
   bootStartedAt: performance.now(),
   shaderWarmupComplete: false,
+  bootFallbackUsed: false,
 };
 function warmupRenderPipeline() {
   if (appState.shaderWarmupComplete) {
@@ -445,6 +544,7 @@ function warmupRenderPipeline() {
   }
 
   appState.shaderWarmupComplete = true;
+  updateWavedashLoadProgress(0.9);
 
   const visibilityRestores = [];
 
@@ -971,6 +1071,8 @@ function hideTrainingOverlay() {
   showMainMenu();
 }
 const BOOT_MIN_DURATION_MS = 1450;
+const BOOT_MAX_DURATION_MS = 12000;
+const BOOT_ASSET_QUIET_MS = 450;
 const BOOT_MESSAGE_INTERVAL_MS = 300;
 const BOOT_MESSAGES = [
   "INITIALIZING ORBITAL SYSTEMS...",
@@ -1060,6 +1162,49 @@ function updateBootOverlay() {
   );
 
   bootOverlay.message.textContent = BOOT_MESSAGES[messageIndex];
+
+  if (elapsed >= BOOT_MIN_DURATION_MS && !areBootAssetsReady()) {
+    bootOverlay.message.textContent = getBootAssetStatusLine();
+  }
+}
+
+function getBootAssetStatusLine() {
+  if (!appState.shaderWarmupComplete) {
+    return "WARMING RENDER PIPELINE...";
+  }
+
+  if (bootAssetLoadState.started && !bootAssetLoadState.settled) {
+    const loaded = Math.max(0, Number(bootAssetLoadState.loaded) || 0);
+    const total = Math.max(loaded, Number(bootAssetLoadState.total) || 0);
+
+    if (total > 0) {
+      return `LOADING ORBITAL ASSETS... ${loaded}/${total}`;
+    }
+
+    return "LOADING ORBITAL ASSETS...";
+  }
+
+  return "FINALIZING DEPLOYMENT...";
+}
+
+function areBootAssetsReady() {
+  const now = performance.now();
+  const elapsed = now - appState.bootStartedAt;
+
+  if (elapsed >= BOOT_MAX_DURATION_MS) {
+    appState.bootFallbackUsed = true;
+    return true;
+  }
+
+  if (!appState.shaderWarmupComplete) {
+    return false;
+  }
+
+  if (bootAssetLoadState.started && !bootAssetLoadState.settled) {
+    return false;
+  }
+
+  return now - bootAssetLoadState.lastProgressAt >= BOOT_ASSET_QUIET_MS;
 }
 
 function finishBootSequence() {
@@ -1072,9 +1217,16 @@ function finishBootSequence() {
     bootOverlay.overlay.style.display = "none";
   }
 
+  if (appState.bootFallbackUsed) {
+    console.warn("Boot continued after asset fallback timeout.");
+  }
+
   showMainMenu();
   startMenuMusic();
   setUIState(UI_STATE.MENU);
+
+  updateWavedashLoadProgress(1);
+  initWavedashIfAvailable();
 }
 
 const audioState = {
@@ -2008,7 +2160,10 @@ function animate() {
     warmupRenderPipeline();
     renderer.render(scene, camera);
 
-    if (performance.now() - appState.bootStartedAt >= BOOT_MIN_DURATION_MS) {
+    if (
+      performance.now() - appState.bootStartedAt >= BOOT_MIN_DURATION_MS &&
+      areBootAssetsReady()
+    ) {
       finishBootSequence();
     }
 
@@ -2060,6 +2215,14 @@ function animate() {
 
       if (controllerDownPressed) {
         moveMenuSelection(1);
+      }
+
+      if (controllerLeftPressed) {
+        adjustMainMenuSetting(-1);
+      }
+
+      if (controllerRightPressed) {
+        adjustMainMenuSetting(1);
       }
 
       if (controllerEnterPressed) {
@@ -2232,13 +2395,8 @@ function animate() {
   const emergencyPowerActive = isEmergencyPowerActive(fuelState);
 
   if (emergencyPowerActive && !player.userData._emergencyHudDebugLogged) {
-  player.userData._emergencyHudDebugLogged = true;
-  console.log("[DEBUG][EMERGENCY] active in main.js", {
-    fuelState: { ...fuelState },
-    stationDistance,
-    terminalOpen: shiftState.terminalOpen,
-  });
-}
+    player.userData._emergencyHudDebugLogged = true;
+  }
 
   if (
     emergencyPowerActive &&
@@ -2602,10 +2760,6 @@ function animate() {
     stopLoop("boost");
     stopRadioStation();
     playSound("powerDown");
-    console.log("[DEBUG][EMERGENCY] depletion handled, HUD should show", {
-  emergencyPowerActive,
-  fuelState: { ...fuelState },
-});
     spawnFloatingText(scene, player.position, "EMERGENCY POWER", player);
     spawnFloatingText(scene, player.position, "PRESS T FOR FULL TOW", player);
   }

@@ -71,7 +71,7 @@ function getDebrisSizeFeel(size) {
   }
 
   return {
-    captureDistanceBonus: 0.18,
+    captureDistanceBonus: 0.23,
     captureAlignmentBonus: 0,
     captureRateMultiplier: 1,
     towLagMultiplier: 1,

@@ -145,12 +145,20 @@ function configureVolumeSliderButton(button, label) {
   });
 }
 function updateMenuOption(nextValues = {}) {
+  const previousIndex = selectedIndex;
+
   currentOptions = {
     ...currentOptions,
     ...nextValues,
   };
+
   rebuildButtonList();
-  updateSelectedButton(selectedIndex);
+
+  if (menuButtons.length) {
+    updateSelectedButton(
+      Math.max(0, Math.min(previousIndex, menuButtons.length - 1)),
+    );
+  }
 }
 
 function changeSettingVolume(key, callbackName, delta) {
@@ -177,7 +185,7 @@ function toggleSetting(key, callbackName, fallbackValue = true) {
   }
 }
 
-function adjustCurrentSetting(delta = 1) {
+export function adjustCurrentSetting(delta = 1) {
   if (currentMenuView !== "settings") return false;
 
   const label = getCurrentButtonLabels()[selectedIndex];
@@ -728,6 +736,7 @@ function handleKeyDown(event) {
 
   if (event.key === "ArrowLeft" || event.key === "a" || event.key === "A") {
     if (adjustCurrentSetting(-1)) {
+      playMenuMoveSound();
       event.preventDefault();
       return;
     }
@@ -741,6 +750,7 @@ function handleKeyDown(event) {
 
   if (event.key === "ArrowRight" || event.key === "d" || event.key === "D") {
     if (adjustCurrentSetting(1)) {
+      playMenuMoveSound();
       event.preventDefault();
       return;
     }

@@ -87,6 +87,7 @@ const SYSTEM_DEDUCTION_LABELS = new Set([
   "Orbital Hazard Premium",
   "Kessler Risk Adjustment",
   "Debris Field Handling Fee",
+  "Debris Density Liability Surcharge",
 ]);
 
 function formatDeductionLines(deductions) {
@@ -345,7 +346,7 @@ function renderUpgradeContent(terminalData) {
   footer.style.whiteSpace = "pre-wrap";
   footer.style.marginTop = "18px";
   footer.textContent =
-    "CLICK OR PRESS [ENTER] TO APPLY AUTHORIZED UPGRADE OR CONTINUE\nW/S, ARROWS, OR CONTROLLER TO CHANGE SELECTION";
+    "CLICK OR PRESS [ENTER] TO APPLY AUTHORIZED UPGRADE OR CONTINUE";
   terminalContent.appendChild(footer);
 }
 

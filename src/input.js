@@ -10,9 +10,9 @@ const gamepadBindings = {
   KeyS: { axis: 1, dir: 1 },
   KeyA: { axis: 0, dir: -1 },
 
-  // Menu / training horizontal navigation via D-pad
-  ArrowLeft: { buttons: [14] },
-  ArrowRight: { buttons: [15] },
+  // Menu / training horizontal navigation via D-pad or right stick horizontal
+  ArrowLeft: { axis: 2, dir: -1, buttons: [14] },
+  ArrowRight: { axis: 2, dir: 1, buttons: [15] },
 
   KeyD: { axis: 0, dir: 1 },
 

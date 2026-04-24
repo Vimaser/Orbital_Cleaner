@@ -63,8 +63,9 @@ function updateAllSoundVolumes() {
 }
 
 function primeLoadedAudio() {
-  Object.values(sounds).forEach((audio) => {
+  Object.entries(sounds).forEach(([name, audio]) => {
     if (!audio) return;
+    if (name === "menuTheme") return;
 
     const previousMuted = audio.muted;
     const previousVolume = audio.volume;

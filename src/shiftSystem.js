@@ -259,22 +259,25 @@ function buildSystemPressureDeductions(sessionStats, grossPay) {
   }
 
   if (activeDebrisCount > 3) {
-    const excessDebris = activeDebrisCount - 3;
-    let congestionValue = 0;
+    let rate = 0;
 
-    if (activeDebrisCount <= 6) {
-      congestionValue = excessDebris * 16;
-    } else if (activeDebrisCount <= 9) {
-      congestionValue = 48 + (activeDebrisCount - 6) * 26;
-    } else if (activeDebrisCount <= 13) {
-      congestionValue = 126 + (activeDebrisCount - 9) * 36;
+    if (activeDebrisCount >= 20) {
+      rate = 0.9;
+    } else if (activeDebrisCount >= 14) {
+      rate = 0.58 + (activeDebrisCount - 14) * 0.04;
+    } else if (activeDebrisCount >= 10) {
+      rate = 0.32 + (activeDebrisCount - 10) * 0.06;
+    } else if (activeDebrisCount >= 6) {
+      rate = 0.12 + (activeDebrisCount - 6) * 0.03;
     } else {
-      congestionValue = 270 + (activeDebrisCount - 13) * 52;
+      rate = (activeDebrisCount - 3) * 0.02;
     }
 
+    const surchargeValue = Math.round(grossPay * Math.min(rate, 0.9));
+
     deductions.push({
-      label: "Debris Field Handling Fee",
-      value: congestionValue,
+      label: "Debris Density Liability Surcharge",
+      value: surchargeValue,
     });
   }
 
@@ -395,6 +398,25 @@ function buildDynamicDeductions(sessionStats, grossPay) {
   );
 }
 
+
+async function submitLeaderboardScore(finalNetPay) {
+  if (!window.Wavedash) return;
+
+  try {
+    const wavedash = await Promise.resolve(window.Wavedash);
+
+    if (wavedash && typeof wavedash.uploadLeaderboardScore === "function") {
+      await wavedash.uploadLeaderboardScore(
+        "high-scores",
+        Math.round(Number(finalNetPay) || 0),
+        true,
+      );
+    }
+  } catch (err) {
+    console.warn("Leaderboard upload failed:", err);
+  }
+}
+
 export function buildShiftSummary(sessionStats) {
   const repairsCompleted = sessionStats?.repairsCompleted || 0;
   const debrisCleared = sessionStats?.debrisCleared || 0;
@@ -402,6 +424,7 @@ export function buildShiftSummary(sessionStats) {
   const deductions = buildDynamicDeductions(sessionStats, grossPay);
   const totalDeductions = deductions.reduce((sum, item) => sum + item.value, 0);
   const netPay = grossPay - totalDeductions;
+  submitLeaderboardScore(netPay);
 
   return {
     repairsCompleted,
