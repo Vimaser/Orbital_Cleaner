@@ -97,6 +97,41 @@ npm run dev
 
 Then open it in your browser.
 
+## Changelog
+
+### v0.1.1 – Day 1 Patch
+
+This patch focuses on stability, clarity, and making the game easier to understand without slowing it down.
+
+**Gameplay / Guidance**
+- Added contextual debris burn guidance (sticky hints)
+- Improved clarity on how to initiate and maintain debris burns
+- Added feedback for alignment and burn state changes
+
+**Platform / Compatibility**
+- Fixed fullscreen stretching issues (Wavedash + browser)
+- Added MP4 fallback for training videos (Safari / iOS support)
+- Improved audio reliability for menu music on embedded platforms
+
+**UI / UX**
+- Training videos now load more consistently across devices
+- Guidance hints now clear properly when paused, in menus, or at terminals
+
+**Credits**
+- Added attribution for fallback Earth model used on Safari/mobile
+
+---
+
+### v0.1.0 – Game Jam Build
+
+- Initial release for GameDevJS Jam
+- Core gameplay loop (repair, debris handling, survival)
+- Credit and debt system with terminal breakdown
+- Flight, heat, fuel, and damage systems
+- Visual effects for crashes and burn up
+
+---
+
 ## Attribution
 
 The following assets are used under the Creative Commons Attribution 4.0 License:
