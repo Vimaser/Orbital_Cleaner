@@ -31,55 +31,48 @@ const TRAINING_SECTIONS = [
       "  Start               Pause",
       "  LB / RB / RT        Boost",
     ].join("\n"),
-    video: "/assets/training/controls.webm",
-    fallbackVideo: "/assets/training/controls.mp4",
+    video: "assets/training/controls.webm",
   },
   {
     id: "repair",
     title: "SATELLITE REPAIR",
     description:
       "Match alignment rings and hold steady to complete repairs.",
-    video: "/assets/training/repair.webm",
-    fallbackVideo: "/assets/training/repair.mp4",
+    video: "assets/training/repair.webm",
   },
   {
     id: "debris",
     title: "DEBRIS CLEANUP",
     description:
       "Capture and burn debris for payout. Larger debris requires more control. But have larger payouts",
-    video: "/assets/training/debris.webm",
-    fallbackVideo: "/assets/training/debris.mp4",
+    video: "assets/training/debris.webm",
   },
   {
     id: "tracker",
     title: "ORBITAL TRACKER",
     description: "Use the tracker to locate satellites and debris. Press M to switch tracker modes (gamepad Y / Triangle).",
-    video: "/assets/training/tracker.webm",
-    fallbackVideo: "/assets/training/tracker.mp4",
+    video: "assets/training/tracker.webm",
   },
   {
     id: "kessler",
     title: "KESSLER EFFECT",
     description:
       "High instability increases debris and operating costs. Repairing satellites helps stabilize orbit and reduce Kessler buildup.",
-    video: "/assets/training/kessler.webm",
-    fallbackVideo: "/assets/training/kessler.mp4",
+    video: "assets/training/kessler.webm",
   },
   {
     id: "fuel",
     title: "FUEL & DOCKING",
     description:
       "Fuel drains during your shift, and boost burns it faster. If fuel hits zero, low power mode activates. Limp back to the ISS for a reduced maintenance fee, or request a full emergency tow with T / X / Square.",
-    video: "/assets/training/fuel.webm",
-    fallbackVideo: "/assets/training/fuel.mp4",
+    video: "assets/training/fuel.webm",
   },
   {
     id: "movement",
     title: "BOOST & ORBITAL MOVEMENT",
     description:
       "Use boost to close distance quickly, then stabilize for precise alignment. Smooth turns and short bursts keep you fast without wasting fuel.",
-    video: "/assets/training/movement.webm",
-    fallbackVideo: "/assets/training/movement.mp4",
+    video: "assets/training/movement.webm",
   },
 ];
 

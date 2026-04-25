@@ -345,6 +345,10 @@ const UI_ASSETS = {
     .href,
   menuBadge: new URL("../assets/ui/orbital-cleaner-badge.png", import.meta.url)
     .href,
+  menuBackground: new URL("../assets/ui/menu-background.webp", import.meta.url)
+    .href,
+  menuAstronaut: new URL("../assets/ui/astronaut.webp", import.meta.url).href,
+  menuShip: new URL("../assets/ui/ship.webp", import.meta.url).href,
 };
 
 loadSound("repair", SOUND_ASSETS.repair, { volume: 0.72 });
@@ -1014,10 +1018,7 @@ function renderTrainingOverlay() {
         <div style="width:min(320px, 100%); border:1px solid rgba(106, 165, 206, 0.38); border-radius:14px; background:rgba(6, 12, 20, 0.82); padding:10px; box-shadow:0 0 0 1px rgba(90, 190, 255, 0.06) inset;">
           ${
             data.video
-              ? `<video autoplay loop muted playsinline preload="auto" style="display:block; width:100%; border-radius:10px; background:#000;">
-                   <source src="${data.video}" type="video/webm">
-                   <source src="${data.fallbackVideo || data.video}" type="video/mp4">
-                 </video>`
+              ? `<video src="${data.video}" autoplay loop muted playsinline preload="auto" style="display:block; width:100%; border-radius:10px; background:#000;"></video>`
               : `<div style="height:180px; display:flex; align-items:center; justify-content:center; color:rgba(190,222,235,0.7);">NO TRAINING CLIP</div>`
           }
         </div>
@@ -1401,6 +1402,25 @@ function handleMobilePauseRequest() {
   }
 }
 
+function returnToMainMenuFromPause() {
+  pauseState.paused = false;
+  shipMenuState.open = false;
+  setMenuVisible(false);
+  hideTrainingOverlay();
+  hidePerformanceOverlay();
+  clearDebrisStickyHint(tutorialState);
+  stopGameplayLoops();
+  stopAllLoops();
+  stopRadioStation();
+  shipMenuState.audioStarted = false;
+  appState.started = false;
+  setUIState(UI_STATE.MENU);
+  resizeScene();
+  window.setTimeout(resizeScene, 150);
+  showMainMenu();
+  startMenuMusic();
+}
+
 function handleConfirmRequest() {
   if (!appState.started) {
     return;
@@ -1600,6 +1620,10 @@ window.addEventListener("performanceReviewRequested", () => {
   showPerformanceEvaluation({
     mandatory: isPerformanceEvaluationMandatory(performanceEvaluationState),
   });
+});
+
+window.addEventListener("returnToMainMenu", () => {
+  returnToMainMenuFromPause();
 });
 
 createMenuUI({
@@ -2084,6 +2108,9 @@ createMainMenu({
   logoAlt: "Orbital Cleaner",
   badgeSrc: UI_ASSETS.menuBadge,
   badgeAlt: "Orbital Cleaner badge",
+  backgroundSrc: UI_ASSETS.menuBackground,
+  astronautSrc: UI_ASSETS.menuAstronaut,
+  shipSrc: UI_ASSETS.menuShip,
   kickerText: "Low Orbit Sanitation Division",
   subtitleText: "Return to shift and restore low orbit",
   footerText: "Arrow Keys / W S / Q E Navigate   Enter Select",

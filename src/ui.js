@@ -22,7 +22,7 @@ function ensureOverlay() {
   overlayRoot.style.alignItems = "center";
   overlayRoot.style.justifyContent = "center";
   overlayRoot.style.background = "rgba(0, 0, 0, 0.38)";
-  overlayRoot.style.pointerEvents = "none";
+  overlayRoot.style.pointerEvents = "auto";
   overlayRoot.style.zIndex = "9998";
 
   overlayPanel = document.createElement("div");
@@ -46,8 +46,26 @@ function ensureOverlay() {
   overlaySubtitle.style.color = "rgba(160, 210, 235, 0.74)";
   overlaySubtitle.textContent = "Press ESC to resume";
 
+  const mainMenuButton = document.createElement("button");
+  mainMenuButton.textContent = "RETURN TO MAIN MENU";
+  mainMenuButton.style.marginTop = "16px";
+  mainMenuButton.style.padding = "10px 14px";
+  mainMenuButton.style.fontFamily = "inherit";
+  mainMenuButton.style.fontSize = "14px";
+  mainMenuButton.style.letterSpacing = "0.08em";
+  mainMenuButton.style.cursor = "pointer";
+  mainMenuButton.style.border = "1px solid rgba(120, 180, 220, 0.72)";
+  mainMenuButton.style.background = "rgba(8, 16, 28, 0.94)";
+  mainMenuButton.style.color = "rgba(235, 245, 255, 0.96)";
+  mainMenuButton.style.borderRadius = "8px";
+
+  mainMenuButton.addEventListener("click", () => {
+    window.dispatchEvent(new Event("returnToMainMenu"));
+  });
+
   overlayPanel.appendChild(overlayTitle);
   overlayPanel.appendChild(overlaySubtitle);
+  overlayPanel.appendChild(mainMenuButton);
   overlayRoot.appendChild(overlayPanel);
   document.body.appendChild(overlayRoot);
 

@@ -1,6 +1,7 @@
 const sounds = {};
 const loops = {};
 const loopAudioRefs = {};
+const loopTokens = {};
 const activeOneShots = {};
 const soundMeta = {};
 const MUSIC_SOUND_NAMES = new Set();
@@ -185,6 +186,9 @@ export function startLoop(name) {
 
   if (!audioUnlocked) return false;
 
+  const token = (loopTokens[name] || 0) + 1;
+  loopTokens[name] = token;
+
   const sound = base.cloneNode();
   sound.loop = true;
   sound.volume = getEffectiveVolume(name);
@@ -195,16 +199,34 @@ export function startLoop(name) {
   if (playAttempt?.then) {
     playAttempt
       .then(() => {
+        if (loopTokens[name] !== token) {
+          sound.pause();
+          sound.currentTime = 0;
+          return;
+        }
+
         loopAudioRefs[name] = sound;
         loops[name] = true;
       })
       .catch(() => {
-        // retry later (important for iframe platforms like Wavedash)
+        if (loopTokens[name] !== token) return;
+
         loops[name] = false;
-        window.setTimeout(() => startLoop(name), 300);
+
+        // Only menu music should retry after iframe autoplay failures.
+        // Gameplay loops like atmosphere burn must not restart after stopLoop().
+        if (name === "menuTheme" && musicState.menu === "menuTheme") {
+          window.setTimeout(() => startLoop(name), 300);
+        }
       });
   } else {
     // fallback for older browsers
+    if (loopTokens[name] !== token) {
+      sound.pause();
+      sound.currentTime = 0;
+      return false;
+    }
+
     loopAudioRefs[name] = sound;
     loops[name] = true;
   }
@@ -213,6 +235,7 @@ export function startLoop(name) {
 }
 
 export function stopLoop(name) {
+  loopTokens[name] = (loopTokens[name] || 0) + 1;
   const sound = loopAudioRefs[name];
   if (!sound) {
     loops[name] = false;

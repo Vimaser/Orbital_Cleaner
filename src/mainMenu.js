@@ -233,22 +233,84 @@ function injectStyles() {
       inset: 0;
       z-index: 5000;
       overflow: hidden;
-      background: radial-gradient(circle at center, rgba(4, 10, 18, 0.12) 0%, rgba(2, 6, 12, 0.24) 68%, rgba(0, 0, 0, 0.44) 100%);
+      background:
+        linear-gradient(90deg, rgba(1, 4, 10, 0.25) 0%, rgba(1, 4, 10, 0.25) 40%, rgba(0, 0, 0, 0.75) 100%),
+        radial-gradient(circle at center, rgba(4, 10, 18, 0.12) 0%, rgba(2, 6, 12, 0.24) 68%, rgba(0, 0, 0, 0.44) 100%);
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
       font-family: monospace;
       color: rgba(235, 245, 255, 0.96);
       user-select: none;
       pointer-events: none;
     }
 
+    .oc-main-menu-root::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: radial-gradient(
+        circle at 30% 60%,
+        rgba(0, 0, 0, 0) 0%,
+        rgba(0, 0, 0, 0.22) 58%,
+        rgba(0, 0, 0, 0.52) 100%
+      );
+    }
+
+    .oc-main-menu-art-layer {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .oc-main-menu-float-art {
+      position: absolute;
+      display: block;
+      object-fit: contain;
+      user-select: none;
+      pointer-events: none;
+      filter: contrast(1.05) brightness(0.95) drop-shadow(0 0 18px rgba(130, 210, 255, 0.12));
+    }
+
+    .oc-main-menu-astronaut {
+      right: clamp(420px, 42vw, 720px);
+      bottom: clamp(80px, 14vh, 200px);
+      width: clamp(360px, 35vw, 900px);
+      opacity: 0.9;
+      transform: translate3d(0, -12px, 0) rotate(-2deg);
+      animation: ocAstronautFloat 7.5s ease-in-out infinite;
+      will-change: transform;
+    }
+
+    .oc-main-menu-ship {
+      left: clamp(-40px, -4vw, 0px);
+      top: clamp(80px, 18vh, 220px);
+      width: clamp(260px, 22vw, 560px);
+      opacity: 0.7;
+      filter:
+        blur(0.2px)
+        drop-shadow(0 0 18px rgba(130, 210, 255, 0.16))
+        drop-shadow(0 0 28px rgba(80, 160, 255, 0.1));
+      animation: ocShipFloat 9s ease-in-out infinite;
+      will-change: transform;
+    }
+
+
     .oc-main-menu-vignette {
       position: absolute;
       inset: 0;
+      z-index: 1;
       pointer-events: none;
       background: radial-gradient(circle at center, transparent 35%, rgba(0, 0, 0, 0.35) 72%, rgba(0, 0, 0, 0.68) 100%);
     }
 
     .oc-main-menu-panel {
       position: absolute;
+      z-index: 2;
       right: clamp(28px, 7vw, 120px);
       top: 50%;
       width: min(420px, calc(100vw - 56px));
@@ -412,6 +474,22 @@ function injectStyles() {
     }
 
     @media (max-width: 900px) {
+      .oc-main-menu-astronaut {
+        right: 6vw;
+        left: auto;
+        bottom: 40vh;
+        width: clamp(280px, 48vw, 520px);
+        opacity: 0.4;
+      }
+
+      .oc-main-menu-ship {
+        left: 2vw;
+        right: auto;
+        top: 10vh;
+        width: clamp(160px, 28vw, 320px);
+        opacity: 0.35;
+      }
+
       .oc-main-menu-panel {
         top: auto;
         bottom: 26px;
@@ -421,6 +499,11 @@ function injectStyles() {
     }
 
     @media (max-width: 640px) {
+      .oc-main-menu-astronaut,
+      .oc-main-menu-ship {
+        display: none;
+      }
+
       .oc-main-menu-panel {
         width: calc(100vw - 28px);
         bottom: 14px;
@@ -449,6 +532,31 @@ function injectStyles() {
       .oc-main-menu-button {
         font-size: 16px;
         padding: 13px 14px;
+      }
+    }
+
+    @keyframes ocAstronautFloat {
+      0%, 100% {
+        transform: translate3d(0, -12px, 0) rotate(-2deg);
+      }
+      50% {
+        transform: translate3d(-12px, -26px, 0) rotate(-3.2deg);
+      }
+    }
+
+    @keyframes ocShipFloat {
+      0%, 100% {
+        transform: translate3d(0, 0, 0) rotate(0deg);
+      }
+      50% {
+        transform: translate3d(10px, -8px, 0) rotate(0.6deg);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .oc-main-menu-astronaut,
+      .oc-main-menu-ship {
+        animation: none;
       }
     }
   `;
@@ -802,6 +910,31 @@ export function createMainMenu(options = {}) {
   menuRoot.setAttribute("role", "dialog");
   menuRoot.setAttribute("aria-label", "Orbital Cleaner main menu");
 
+  if (options.backgroundSrc) {
+    menuRoot.style.backgroundImage = `linear-gradient(90deg, rgba(1, 4, 10, 0.25) 0%, rgba(1, 4, 10, 0.25) 40%, rgba(0, 0, 0, 0.75) 100%), radial-gradient(circle at center, rgba(4, 10, 18, 0.12) 0%, rgba(2, 6, 12, 0.24) 68%, rgba(0, 0, 0, 0.44) 100%), url(${options.backgroundSrc})`;
+  }
+
+  const artLayer = document.createElement("div");
+  artLayer.className = "oc-main-menu-art-layer";
+
+  if (options.astronautSrc) {
+    const astronautArt = document.createElement("img");
+    astronautArt.className = "oc-main-menu-float-art oc-main-menu-astronaut";
+    astronautArt.src = options.astronautSrc;
+    astronautArt.alt = "";
+    astronautArt.setAttribute("aria-hidden", "true");
+    artLayer.appendChild(astronautArt);
+  }
+
+  if (options.shipSrc) {
+    const shipArt = document.createElement("img");
+    shipArt.className = "oc-main-menu-float-art oc-main-menu-ship";
+    shipArt.src = options.shipSrc;
+    shipArt.alt = "";
+    shipArt.setAttribute("aria-hidden", "true");
+    artLayer.appendChild(shipArt);
+  }
+
   const panel = document.createElement("div");
   panel.className = "oc-main-menu-panel";
 
@@ -873,6 +1006,7 @@ export function createMainMenu(options = {}) {
   const vignette = document.createElement("div");
   vignette.className = "oc-main-menu-vignette";
 
+  menuRoot.appendChild(artLayer);
   menuRoot.appendChild(panel);
   menuRoot.appendChild(vignette);
 
