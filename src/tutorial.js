@@ -7,8 +7,13 @@ const DEFAULT_TUTORIAL_CONFIG = {
 
 const TUTORIAL_MESSAGES = {
   repair: 'Match alignment and hold steady to complete repairs.',
-  tow: 'Hold steady. Lower orbit can burn debris down.',
-  burn: 'Careful. Instability can snap the tow line.',
+  tow: 'Debris can be burned down in lower orbit. Line up and hold steady.',
+  burn: 'Burn in progress. Maintain position until the debris breaks down.',
+  debrisIntro: 'Line up and hold steady to burn debris.',
+  debrisUnstable: 'Stabilize and stay aligned to start the burn.',
+  debrisAligned: 'Hold position. Burn window is open.',
+  debrisLost: 'Lost alignment. Re-center and hold steady.',
+  fuelLow: 'Fuel is getting low. Return to the ISS before you lose boost.',
 }
 
 export function createTutorialState(config = {}) {
@@ -17,6 +22,10 @@ export function createTutorialState(config = {}) {
     repairHintShown: false,
     towHintShown: false,
     burnHintShown: false,
+    debrisIntroShown: false,
+    fuelLowHintShown: false,
+    stickyMessage: '',
+    stickyKey: null,
     activeMessage: '',
     activeKey: null,
     messageTimer: 0,
@@ -59,12 +68,29 @@ export function clearTutorialHint(tutorialState) {
   tutorialState.messageTimer = 0
 }
 
+export function clearStickyTutorialHint(tutorialState, key = null) {
+  if (!tutorialState) return
+
+  if (key && tutorialState.stickyKey !== key) return
+
+  tutorialState.stickyMessage = ''
+  tutorialState.stickyKey = null
+}
+
 function showTutorialHint(tutorialState, key, message) {
   if (!tutorialState?.enabled || !message) return false
 
   tutorialState.activeKey = key
   tutorialState.activeMessage = message
   tutorialState.messageTimer = tutorialState.config.messageDuration
+  return true
+}
+
+export function showStickyTutorialHint(tutorialState, key, message) {
+  if (!tutorialState?.enabled || !message) return false
+
+  tutorialState.stickyKey = key
+  tutorialState.stickyMessage = message
   return true
 }
 
@@ -82,12 +108,83 @@ export function showBurnHintOnce(tutorialState) {
   return showTutorialHint(tutorialState, 'burn', TUTORIAL_MESSAGES.burn)
 }
 
+export function showDebrisIntroHintOnce(tutorialState) {
+  if (!tutorialState || tutorialState.debrisIntroShown) return false
+
+  tutorialState.debrisIntroShown = true
+  return showTutorialHint(
+    tutorialState,
+    'debrisIntro',
+    TUTORIAL_MESSAGES.debrisIntro,
+  )
+}
+
+export function showFuelLowHintOnce(tutorialState) {
+  if (!tutorialState || tutorialState.fuelLowHintShown) return false
+
+  tutorialState.fuelLowHintShown = true
+  return showTutorialHint(tutorialState, 'fuelLow', TUTORIAL_MESSAGES.fuelLow)
+}
+
+export function showDebrisStickyHint(tutorialState, status = 'intro') {
+  if (!tutorialState?.enabled) return false
+
+  const normalizedStatus = String(status || 'intro').toLowerCase()
+
+  if (normalizedStatus === 'burning') {
+    return showStickyTutorialHint(
+      tutorialState,
+      'debrisBurning',
+      TUTORIAL_MESSAGES.burn,
+    )
+  }
+
+  if (normalizedStatus === 'aligned') {
+    return showStickyTutorialHint(
+      tutorialState,
+      'debrisAligned',
+      TUTORIAL_MESSAGES.debrisAligned,
+    )
+  }
+
+  if (normalizedStatus === 'lost') {
+    return showStickyTutorialHint(
+      tutorialState,
+      'debrisLost',
+      TUTORIAL_MESSAGES.debrisLost,
+    )
+  }
+
+  if (normalizedStatus === 'unstable') {
+    return showStickyTutorialHint(
+      tutorialState,
+      'debrisUnstable',
+      TUTORIAL_MESSAGES.debrisUnstable,
+    )
+  }
+
+  return showStickyTutorialHint(
+    tutorialState,
+    'debrisIntro',
+    TUTORIAL_MESSAGES.debrisIntro,
+  )
+}
+
+export function clearDebrisStickyHint(tutorialState) {
+  if (!tutorialState?.stickyKey?.startsWith?.('debris')) return
+
+  clearStickyTutorialHint(tutorialState)
+}
+
 export function resetTutorialHints(tutorialState) {
   if (!tutorialState) return
 
   tutorialState.repairHintShown = false
   tutorialState.towHintShown = false
   tutorialState.burnHintShown = false
+  tutorialState.debrisIntroShown = false
+  tutorialState.fuelLowHintShown = false
+  clearStickyTutorialHint(tutorialState)
   clearTutorialHint(tutorialState)
 }
 
@@ -153,7 +250,10 @@ function drawRoundRect(ctx, x, y, width, height, radius) {
 }
 
 export function drawTutorialHint(hud, tutorialState) {
-  if (!hud || !tutorialState?.enabled || !tutorialState.activeMessage) return
+  if (!hud || !tutorialState?.enabled) return
+
+  const activeMessage = tutorialState.stickyMessage || tutorialState.activeMessage
+  if (!activeMessage) return
 
   const canvas = getTutorialCanvas(hud)
   const ctx = canvas?.getContext?.('2d')
@@ -162,8 +262,10 @@ export function drawTutorialHint(hud, tutorialState) {
   const width = canvas.width || window.innerWidth || 1280
   const height = canvas.height || window.innerHeight || 720
   const fadeOutDuration = Math.max(0.001, tutorialState.config.fadeOutDuration)
-  const opacity = Math.min(1, tutorialState.messageTimer / fadeOutDuration)
-  const message = tutorialState.activeMessage
+  const opacity = tutorialState.stickyMessage
+    ? 1
+    : Math.min(1, tutorialState.messageTimer / fadeOutDuration)
+  const message = activeMessage
   const centerX = width / 2
   const centerY = height - (tutorialState.config.bottomOffset || 110)
   const maxTextWidth = Math.min(

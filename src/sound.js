@@ -65,7 +65,6 @@ function updateAllSoundVolumes() {
 function primeLoadedAudio() {
   Object.entries(sounds).forEach(([name, audio]) => {
     if (!audio) return;
-    if (name === "menuTheme") return;
 
     const previousMuted = audio.muted;
     const previousVolume = audio.volume;
@@ -179,21 +178,38 @@ export function playSoundIfIdle(name, { volume = 1, playbackRate = 1 } = {}) {
 }
 
 export function startLoop(name) {
-  if (!audioUnlocked) return;
-
   const base = sounds[name];
-  if (!base) return;
+  if (!base) return false;
 
-  if (loops[name]) return;
+  if (loops[name]) return true;
+
+  if (!audioUnlocked) return false;
 
   const sound = base.cloneNode();
   sound.loop = true;
   sound.volume = getEffectiveVolume(name);
   sound.currentTime = 0;
-  sound.play().catch(() => {});
 
-  loopAudioRefs[name] = sound;
-  loops[name] = true;
+  const playAttempt = sound.play();
+
+  if (playAttempt?.then) {
+    playAttempt
+      .then(() => {
+        loopAudioRefs[name] = sound;
+        loops[name] = true;
+      })
+      .catch(() => {
+        // retry later (important for iframe platforms like Wavedash)
+        loops[name] = false;
+        window.setTimeout(() => startLoop(name), 300);
+      });
+  } else {
+    // fallback for older browsers
+    loopAudioRefs[name] = sound;
+    loops[name] = true;
+  }
+
+  return true;
 }
 
 export function stopLoop(name) {
@@ -283,7 +299,10 @@ export function startMenuMusic() {
   }
 
   musicState.menu = "menuTheme";
-  startLoop("menuTheme");
+  const started = startLoop("menuTheme");
+  if (!started) {
+    pendingMenuMusic = true;
+  }
 }
 
 export function stopMenuMusic() {

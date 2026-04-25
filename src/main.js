@@ -12,6 +12,9 @@ import {
   showRepairHintOnce,
   showTowHintOnce,
   showBurnHintOnce,
+  showDebrisIntroHintOnce,
+  showDebrisStickyHint,
+  clearDebrisStickyHint,
   updateTutorial,
   drawTutorialHint,
 } from "./tutorial.js";
@@ -291,7 +294,8 @@ THREE.DefaultLoadingManager.onError = (url) => {
   bootAssetLoadState.lastProgressAt = performance.now();
 };
 
-const { scene, camera, renderer } = createScene();
+const { scene, camera, renderer, resizeScene } = createScene();
+resizeScene();
 
 const SOUND_ASSETS = {
   repair: new URL("../assets/sfx/repair.ogg", import.meta.url).href,
@@ -492,6 +496,7 @@ const PRESSURE_CONFIG = {
 const STATION_TERMINAL_TRIGGER_DISTANCE = 9;
 const STATION_TERMINAL_REARM_DISTANCE = 18;
 const DEBRIS_AUTO_FOCUS_DISTANCE = 8;
+const DEBRIS_GUIDANCE_DISTANCE = 12;
 const UPGRADE_KEYS = ["1", "2", "3"];
 const UPGRADE_BASE_REQUIREMENTS = {
   1: 250,
@@ -705,6 +710,7 @@ function ensureCreditsOverlay() {
       </div>
       <ul style="margin:0; padding-left:20px; color:rgba(225,245,255,0.94); font-size:13px;">
         <li><strong>“EARTH”</strong> — Stéphane Agullo<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6DxnV</span></li>
+        <li><strong>“Earth | Terra - Downloadable model”</strong> — murilo.kleine<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/X7P9</span><br><span style="color:rgba(160,210,230,0.72);">Safari/mobile fallback Earth model</span></li>
         <li><strong>“KSP: Primitive Orbital Station Complex”</strong> — Tanu Singh<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6UW9H</span></li>
         <li><strong>“Moon”</strong> — RenderX<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/oFRLK</span></li>
         <li><strong>“Dawn”</strong> — uperesito<br><span style="color:rgba(160,210,230,0.86);">https://skfb.ly/6oPxY</span></li>
@@ -1008,7 +1014,10 @@ function renderTrainingOverlay() {
         <div style="width:min(320px, 100%); border:1px solid rgba(106, 165, 206, 0.38); border-radius:14px; background:rgba(6, 12, 20, 0.82); padding:10px; box-shadow:0 0 0 1px rgba(90, 190, 255, 0.06) inset;">
           ${
             data.video
-              ? `<video src="${data.video}" autoplay loop muted playsinline style="display:block; width:100%; border-radius:10px; background:#000;"></video>`
+              ? `<video autoplay loop muted playsinline preload="auto" style="display:block; width:100%; border-radius:10px; background:#000;">
+                   <source src="${data.video}" type="video/webm">
+                   <source src="${data.fallbackVideo || data.video}" type="video/mp4">
+                 </video>`
               : `<div style="height:180px; display:flex; align-items:center; justify-content:center; color:rgba(190,222,235,0.7);">NO TRAINING CLIP</div>`
           }
         </div>
@@ -1221,6 +1230,9 @@ function finishBootSequence() {
     console.warn("Boot continued after asset fallback timeout.");
   }
 
+  resizeScene();
+  window.setTimeout(resizeScene, 150);
+
   showMainMenu();
   startMenuMusic();
   setUIState(UI_STATE.MENU);
@@ -1351,6 +1363,9 @@ const comboPenaltyState = {
 const tutorialState = createTutorialState();
 
 let selectedPrimaryDebris = null;
+const debrisGuidanceState = {
+  wasBurning: false,
+};
 let comboLastTimestamp = null;
 
 const shipMenuState = {
@@ -1702,6 +1717,70 @@ function resolvePrimaryDebris(previousTarget = selectedPrimaryDebris) {
   return primaryDebris;
 }
 
+function updateDebrisGuidance(primaryDebris) {
+  if (!tutorialState?.enabled) return;
+
+  if (!primaryDebris?.position || !primaryDebris?.userData?.active) {
+    clearDebrisStickyHint(tutorialState);
+    debrisGuidanceState.wasBurning = false;
+    return;
+  }
+
+  const distance = player.position.distanceTo(primaryDebris.position);
+
+  if (distance > DEBRIS_GUIDANCE_DISTANCE) {
+    clearDebrisStickyHint(tutorialState);
+    debrisGuidanceState.wasBurning = false;
+    return;
+  }
+
+  showDebrisIntroHintOnce(tutorialState);
+
+  const data = primaryDebris.userData || {};
+  const burnProgress = Math.max(
+    0,
+    Number(data.burnProgress ?? data.heatProgress ?? data.burnAmount ?? 0) || 0,
+  );
+  const isBurning =
+    data.burning === true ||
+    data.burnActive === true ||
+    data.beingBurned === true ||
+    burnProgress > 0;
+
+  if (isBurning) {
+    debrisGuidanceState.wasBurning = true;
+    showDebrisStickyHint(tutorialState, "burning");
+    return;
+  }
+
+  if (debrisGuidanceState.wasBurning) {
+    debrisGuidanceState.wasBurning = false;
+    showDebrisStickyHint(tutorialState, "lost");
+    return;
+  }
+
+  const isAttached = data.attached === true || data.towed === true;
+  const isTracked = data.tracked === true || data.isTracked === true;
+  const hasLock = data.locked === true || data.lockedOn === true;
+  const isAligned =
+    data.aligned === true ||
+    data.burnAligned === true ||
+    data.inBurnWindow === true ||
+    hasLock;
+
+  if (isAttached || isAligned) {
+    showDebrisStickyHint(tutorialState, "aligned");
+    return;
+  }
+
+  if (isTracked || distance <= DEBRIS_AUTO_FOCUS_DISTANCE) {
+    showDebrisStickyHint(tutorialState, "unstable");
+    return;
+  }
+
+  showDebrisStickyHint(tutorialState, "intro");
+}
+
 const satellites = createSatellites(scene);
 for (const satellite of satellites) {
   if (satellite?.userData) {
@@ -1984,6 +2063,8 @@ function startGameFromMainMenu(options = {}) {
   }
 
   appState.started = true;
+  resizeScene();
+  window.setTimeout(resizeScene, 150);
   hideTrainingOverlay();
   hideMainMenu();
   stopMenuMusic();
@@ -2336,6 +2417,7 @@ function animate() {
     stopGameplayLoops();
     drawUI(UI_STATE.PAUSED);
     comboLastTimestamp = null;
+    clearDebrisStickyHint(tutorialState);
     renderer.render(scene, camera);
     return;
   }
@@ -2343,6 +2425,7 @@ function animate() {
     stopGameplayLoops();
     drawUI(UI_STATE.GAME);
     comboLastTimestamp = null;
+    clearDebrisStickyHint(tutorialState);
     renderer.render(scene, camera);
     return;
   }
@@ -2564,6 +2647,7 @@ function animate() {
       });
     }
     comboLastTimestamp = null;
+    clearDebrisStickyHint(tutorialState);
     renderer.render(scene, camera);
     return;
   }
@@ -2678,6 +2762,7 @@ function animate() {
   }
 
   primaryDebris = resolvePrimaryDebris(primaryDebris);
+  updateDebrisGuidance(primaryDebris);
 
   updateScanSystem({
     debrisList: debrisManagerState.debrisList,
