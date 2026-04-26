@@ -15,6 +15,13 @@ let footerNode = null;
 let buttonListNode = null;
 
 const MAIN_MENU_BUTTONS = ["START", "TRAINING", "SETTINGS", "CREDITS"];
+const MAIN_MENU_CONTINUE_BUTTONS = [
+  "CONTINUE",
+  "START",
+  "TRAINING",
+  "SETTINGS",
+  "CREDITS",
+];
 const LAUNCH_MENU_BUTTONS = [
   "GUIDANCE_TOGGLE",
   "TRAINING_SHIFT",
@@ -40,6 +47,7 @@ const DIFFICULTY_LABELS = {
 };
 
 const MAIN_MENU_LABELS = {
+  CONTINUE: "Continue Shift",
   START: "Start Shift",
   TRAINING: "Training Module",
   SETTINGS: "Settings",
@@ -78,6 +86,12 @@ function formatVolumePercent(value) {
 
 function getRadioToggleText() {
   return getRadioEnabled() ? "Radio System  [ON]" : "Radio System  [OFF]";
+}
+
+function canContinueShift() {
+  return typeof currentOptions?.canContinueShift === "function"
+    ? currentOptions.canContinueShift()
+    : false;
 }
 
 function getSettingsButtonText(label) {
@@ -325,6 +339,8 @@ function injectStyles() {
       backdrop-filter: blur(4px);
       border-radius: 16px;
       pointer-events: auto;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
     }
 
     .oc-main-menu-kicker {
@@ -392,6 +408,7 @@ function injectStyles() {
       display: flex;
       flex-direction: column;
       gap: 12px;
+      min-height: 0;
     }
 
     .oc-main-menu-button {
@@ -490,11 +507,53 @@ function injectStyles() {
         opacity: 0.35;
       }
 
+      .oc-main-menu-kicker {
+        font-size: clamp(12px, 3vw, 15px);
+        letter-spacing: 0.32em;
+        margin-bottom: 8px;
+      }
+
       .oc-main-menu-panel {
-        top: auto;
-        bottom: 26px;
-        right: 50%;
-        transform: translateX(50%);
+        top: 50%;
+        bottom: auto;
+        left: 50%;
+        right: auto;
+        width: min(560px, calc(100vw - 32px));
+        max-height: calc(100vh - 32px);
+        transform: translate(-50%, -50%);
+        padding: 28px 28px 24px;
+      }
+
+      .oc-main-menu-logo {
+        max-height: clamp(132px, 22vh, 190px);
+        margin-bottom: 10px;
+      }
+
+      .oc-main-menu-subtitle {
+        margin: 8px 0 20px;
+        font-size: clamp(12px, 2.8vw, 15px);
+        letter-spacing: 0.18em;
+      }
+
+      .oc-main-menu-button-list {
+        gap: 12px;
+      }
+
+      .oc-main-menu-button {
+        padding: 15px 16px;
+        font-size: clamp(17px, 4vw, 22px);
+        letter-spacing: 0.14em;
+      }
+
+      .oc-main-menu-footer {
+        margin-top: 12px;
+        font-size: 9px;
+        letter-spacing: 0.1em;
+      }
+
+      .oc-main-menu-compatibility-note {
+        margin-top: 10px;
+        font-size: 9px;
       }
     }
 
@@ -505,9 +564,15 @@ function injectStyles() {
       }
 
       .oc-main-menu-panel {
-        width: calc(100vw - 28px);
-        bottom: 14px;
-        padding: 22px 18px 18px;
+        top: 50%;
+        bottom: auto;
+        left: 50%;
+        right: auto;
+        transform: translate(-50%, -50%);
+        width: calc(100vw - 4px);
+        padding: clamp(24px, 7vw, 38px);
+        border-radius: 16px;
+        max-height: calc(100vh - 6px);
       }
 
       .oc-main-menu-title {
@@ -515,8 +580,8 @@ function injectStyles() {
       }
 
       .oc-main-menu-logo {
-        max-height: 108px;
-        margin-bottom: 8px;
+        max-height: clamp(180px, 31vh, 285px);
+        margin-bottom: 14px;
       }
 
       .oc-main-menu-badge {
@@ -525,13 +590,78 @@ function injectStyles() {
       }
 
       .oc-main-menu-subtitle {
-        font-size: 11px;
-        letter-spacing: 0.16em;
+        margin: 10px 0 24px;
+        font-size: clamp(14px, 4.2vw, 18px);
+        letter-spacing: 0.12em;
       }
 
       .oc-main-menu-button {
-        font-size: 16px;
-        padding: 13px 14px;
+        font-size: clamp(23px, 7vw, 31px);
+        padding: 22px 20px;
+        border-radius: 14px;
+        letter-spacing: 0.12em;
+      }
+
+      .oc-main-menu-button-list {
+        gap: 16px;
+      }
+
+      .oc-main-menu-kicker {
+        font-size: clamp(14px, 4.4vw, 18px);
+        letter-spacing: 0.24em;
+        margin-bottom: 10px;
+      }
+
+      .oc-main-menu-footer {
+        margin-top: 18px;
+        font-size: clamp(11px, 3.4vw, 15px);
+        letter-spacing: 0.09em;
+      }
+
+      .oc-main-menu-compatibility-note {
+        display: none;
+      }
+
+      .oc-main-menu-slider-row {
+        gap: 8px;
+      }
+
+      .oc-main-menu-slider-label {
+        white-space: normal;
+      }
+    }
+
+    @media (max-height: 620px) {
+      .oc-main-menu-panel {
+        top: 50%;
+        bottom: auto;
+        left: 50%;
+        right: auto;
+        transform: translate(-50%, -50%);
+        padding: 18px 20px;
+      }
+
+      .oc-main-menu-logo {
+        max-height: clamp(120px, 22vh, 175px);
+        margin-bottom: 6px;
+      }
+
+      .oc-main-menu-subtitle {
+        margin: 4px 0 10px;
+      }
+
+      .oc-main-menu-button-list {
+        gap: 7px;
+      }
+
+      .oc-main-menu-button {
+        padding: 15px 14px;
+        font-size: clamp(17px, 4.8vw, 22px);
+      }
+
+      .oc-main-menu-footer,
+      .oc-main-menu-compatibility-note {
+        display: none;
       }
     }
 
@@ -573,7 +703,7 @@ function getCurrentButtonLabels() {
     return SETTINGS_MENU_BUTTONS;
   }
 
-  return MAIN_MENU_BUTTONS;
+  return canContinueShift() ? MAIN_MENU_CONTINUE_BUTTONS : MAIN_MENU_BUTTONS;
 }
 
 function getActiveDifficultyId() {
@@ -646,7 +776,9 @@ function rebuildButtonList() {
             : currentMenuView === "settings"
               ? getSettingsButtonText(label)
               : currentMenuView === "main"
-                ? MAIN_MENU_LABELS[label] || label
+                ? label === "START" && canContinueShift()
+                  ? "Start New Shift"
+                  : MAIN_MENU_LABELS[label] || label
                 : label;
     }
 
@@ -740,6 +872,13 @@ function triggerSelectedButton(index = selectedIndex) {
   const buttonLabels = getCurrentButtonLabels();
   const label = buttonLabels[index];
   if (!label) return;
+
+  if (label === "CONTINUE") {
+    if (typeof currentOptions?.onContinue === "function") {
+      currentOptions.onContinue();
+    }
+    return;
+  }
 
   if (currentMenuView === "launch") {
     if (label === "BACK") {

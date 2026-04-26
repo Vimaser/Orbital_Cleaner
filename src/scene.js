@@ -1,4 +1,24 @@
+
 import * as THREE from 'three'
+
+const DESKTOP_MAX_RENDER_PIXEL_RATIO = 1.25
+const MOBILE_MAX_RENDER_PIXEL_RATIO = 1
+
+function isPhoneLikeDevice() {
+  if (typeof window === 'undefined') return false
+
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)')?.matches
+  const narrowScreen = Math.min(window.innerWidth, window.innerHeight) <= 760
+  const touchPoints = navigator.maxTouchPoints > 0
+
+  return Boolean((coarsePointer || touchPoints) && narrowScreen)
+}
+
+function getMaxRenderPixelRatio() {
+  return isPhoneLikeDevice()
+    ? MOBILE_MAX_RENDER_PIXEL_RATIO
+    : DESKTOP_MAX_RENDER_PIXEL_RATIO
+}
 
 export function createScene() {
   const scene = new THREE.Scene()
@@ -16,7 +36,7 @@ export function createScene() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.0
   renderer.physicallyCorrectLights = true
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, getMaxRenderPixelRatio()))
   renderer.setSize(window.innerWidth, window.innerHeight, false)
   document.body.appendChild(renderer.domElement)
 
@@ -27,7 +47,7 @@ export function createScene() {
     camera.aspect = width / height
     camera.updateProjectionMatrix()
 
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, getMaxRenderPixelRatio()))
     renderer.setSize(width, height, false)
   }
 

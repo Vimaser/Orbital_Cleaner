@@ -3,28 +3,15 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import earthGlbUrl from '../assets/models/earth.glb?url'
 import terraGlbUrl from '../assets/models/terra.glb?url'
 
-function isMobileLikeDevice() {
-  if (typeof window === 'undefined') return false
-  const coarse = window.matchMedia?.('(pointer: coarse)')?.matches
-  const touchPoints = navigator.maxTouchPoints > 0
-  return !!(coarse || touchPoints)
-}
-
-function isSafariBrowser() {
-  if (typeof navigator === 'undefined') return false
-  const ua = navigator.userAgent || ''
-  const isSafari = /Safari/i.test(ua) && !/Chrome|CriOS|Chromium|Android/i.test(ua)
-  return isSafari
-}
 
 export function createPlanet(scene, planetRadius) {
   const planet = new THREE.Object3D()
 
   const loader = new GLTFLoader()
 
-  const useLightPlanet = isMobileLikeDevice() || isSafariBrowser()
-  const planetGlbUrl = useLightPlanet ? terraGlbUrl : earthGlbUrl
-  const overlaySegments = useLightPlanet ? 32 : 64
+  const useLightPlanet = false
+  const planetGlbUrl = earthGlbUrl
+  const overlaySegments = 64
 
   loader.load(planetGlbUrl, (gltf) => {
     const earth = gltf.scene
@@ -194,7 +181,7 @@ export function createPlanet(scene, planetRadius) {
     planet.add(auroraSphere)
 
     // Handle animation if present
-    if (!useLightPlanet && gltf.animations && gltf.animations.length > 0) {
+    if (gltf.animations && gltf.animations.length > 0) {
       const mixer = new THREE.AnimationMixer(earth)
       gltf.animations.forEach((clip) => {
         const action = mixer.clipAction(clip)

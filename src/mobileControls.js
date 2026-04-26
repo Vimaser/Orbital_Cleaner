@@ -1,12 +1,11 @@
-
-
 const DEFAULT_OPTIONS = {
   deadzone: 0.28,
   joystickSize: 160,
   knobSize: 52,
   throttleRepeatMs: 80,
   boostLabel: "BOOST",
-  pauseLabel: "MENU",
+  pauseLabel: "Ⅱ",
+  menuLabel: "~",
 };
 
 function clamp(value, min, max) {
@@ -71,6 +70,18 @@ function setThrottleState(keys, direction) {
   setKeyState(keys, "arrowdown", downPressed);
 }
 
+function pulseMenuKey(keys) {
+  setKeyState(keys, "`", true);
+  setKeyState(keys, "~", true);
+  setKeyState(keys, "Backquote", true);
+
+  window.setTimeout(() => {
+    setKeyState(keys, "`", false);
+    setKeyState(keys, "~", false);
+    setKeyState(keys, "Backquote", false);
+  }, 80);
+}
+
 function isMobileLikeDevice() {
   if (typeof window === "undefined") return false;
   const coarse = window.matchMedia?.("(pointer: coarse)")?.matches;
@@ -85,6 +96,8 @@ export function createMobileControls(keys, userOptions = {}) {
       show() {},
       hide() {},
       isActive: false,
+      setPauseHandler() {},
+      setMenuHandler() {},
     };
   }
 
@@ -100,6 +113,7 @@ export function createMobileControls(keys, userOptions = {}) {
       },
       isMobileLikeDevice,
       setPauseHandler() {},
+      setMenuHandler() {},
     };
   }
   const state = {
@@ -109,6 +123,7 @@ export function createMobileControls(keys, userOptions = {}) {
     throttleTimer: null,
     elements: {},
     pauseHandler: typeof options.onPause === "function" ? options.onPause : null,
+    menuHandler: typeof options.onMenu === "function" ? options.onMenu : null,
   };
 
   const container = document.createElement("div");
@@ -116,7 +131,7 @@ export function createMobileControls(keys, userOptions = {}) {
   Object.assign(container.style, {
     position: "fixed",
     inset: "0",
-    zIndex: "60",
+    zIndex: "10002",
     pointerEvents: "none",
     display: "none",
     touchAction: "none",
@@ -235,12 +250,29 @@ export function createMobileControls(keys, userOptions = {}) {
     width: "82px",
     height: "42px",
     pointerEvents: "auto",
+    zIndex: "10003",
+  });
+
+  const menuButton = document.createElement("button");
+  menuButton.type = "button";
+  menuButton.textContent = options.menuLabel;
+  applyBaseButtonStyles(menuButton);
+  Object.assign(menuButton.style, {
+    position: "absolute",
+    left: "16px",
+    top: "16px",
+    width: "58px",
+    height: "42px",
+    pointerEvents: "auto",
+    zIndex: "10003",
+    fontSize: "20px",
   });
 
   container.appendChild(joystickZone);
   container.appendChild(throttleStack);
   container.appendChild(actionStack);
   container.appendChild(pauseButton);
+  container.appendChild(menuButton);
   document.body.appendChild(container);
 
   state.elements = {
@@ -251,6 +283,7 @@ export function createMobileControls(keys, userOptions = {}) {
     throttleDownButton,
     boostButton,
     pauseButton,
+    menuButton,
   };
 
   function resetJoystick() {
@@ -380,6 +413,18 @@ export function createMobileControls(keys, userOptions = {}) {
   };
   pauseButton.addEventListener("pointerdown", onPausePointerDown);
 
+  const onMenuPointerDown = (event) => {
+    event.preventDefault();
+
+    if (state.menuHandler) {
+      state.menuHandler();
+      return;
+    }
+
+    pulseMenuKey(keys);
+  };
+  menuButton.addEventListener("pointerdown", onMenuPointerDown);
+
   const onJoystickPointerDown = (event) => {
     event.preventDefault();
     state.pointerId = event.pointerId;
@@ -424,6 +469,7 @@ export function createMobileControls(keys, userOptions = {}) {
     unbindThrottleDown();
     unbindBoost();
     pauseButton.removeEventListener("pointerdown", onPausePointerDown);
+    menuButton.removeEventListener("pointerdown", onMenuPointerDown);
     joystickZone.removeEventListener("pointerdown", onJoystickPointerDown);
     joystickZone.removeEventListener("pointermove", onJoystickPointerMove);
     joystickZone.removeEventListener("pointerup", onJoystickPointerEnd);
@@ -448,6 +494,9 @@ export function createMobileControls(keys, userOptions = {}) {
     isMobileLikeDevice,
     setPauseHandler(handler) {
       state.pauseHandler = typeof handler === "function" ? handler : null;
+    },
+    setMenuHandler(handler) {
+      state.menuHandler = typeof handler === "function" ? handler : null;
     },
   };
 }

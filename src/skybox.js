@@ -1,17 +1,5 @@
 import * as THREE from 'three'
 
-function isSafariLikeBrowser() {
-  if (typeof navigator === 'undefined') return false
-
-  const ua = navigator.userAgent || ''
-  const vendor = navigator.vendor || ''
-  const isAppleVendor = /Apple/i.test(vendor)
-  const isSafariEngine = /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Edg|FxiOS|Firefox/i.test(ua)
-  const isIOSWebKit = /iPhone|iPad|iPod/i.test(ua)
-
-  return isSafariEngine || (isAppleVendor && isIOSWebKit)
-}
-
 const REAL_STARS = [
   { id: 'sirius', ra: 101.287, dec: -16.716, mag: -1.46 },
   { id: 'canopus', ra: 95.987, dec: -52.695, mag: -0.74 },
@@ -132,7 +120,7 @@ let constellationLines = null
 
 export function createSkybox(scene) {
   skybox = new THREE.Group()
-  const safariSafeMode = isSafariLikeBrowser()
+  const safariSafeMode = false
 
   skybox.name = 'Skybox'
 

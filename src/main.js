@@ -823,6 +823,10 @@ function hidePerformanceOverlay() {
   if (performanceOverlay) {
     performanceOverlay.style.display = "none";
   }
+
+  if (appState.started && !shiftState.terminalOpen) {
+    mobileControls.show();
+  }
 }
 
 function showPerformanceEvaluation({ mandatory = false } = {}) {
@@ -832,6 +836,8 @@ function showPerformanceEvaluation({ mandatory = false } = {}) {
   ) {
     return;
   }
+
+  mobileControls.hide();
 
   const evaluation = completePerformanceEvaluation({
     evaluationState: performanceEvaluationState,
@@ -1234,6 +1240,7 @@ function finishBootSequence() {
   resizeScene();
   window.setTimeout(resizeScene, 150);
 
+  mobileControls.hide();
   showMainMenu();
   startMenuMusic();
   setUIState(UI_STATE.MENU);
@@ -1402,6 +1409,18 @@ function handleMobilePauseRequest() {
   }
 }
 
+function handleMobileShipMenuRequest() {
+  if (!appState.started) {
+    return;
+  }
+
+  ensureBackgroundAudioStarted();
+
+  if (!shiftState.terminalOpen) {
+    shipMenuState.open = toggleMenuVisible();
+  }
+}
+
 function returnToMainMenuFromPause() {
   pauseState.paused = false;
   shipMenuState.open = false;
@@ -1410,10 +1429,11 @@ function returnToMainMenuFromPause() {
   hidePerformanceOverlay();
   clearDebrisStickyHint(tutorialState);
   stopGameplayLoops();
-  stopAllLoops();
+  stopMenuMusic();
   stopRadioStation();
   shipMenuState.audioStarted = false;
   appState.started = false;
+  mobileControls.hide();
   setUIState(UI_STATE.MENU);
   resizeScene();
   window.setTimeout(resizeScene, 150);
@@ -1640,6 +1660,7 @@ createMenuUI({
   currentRankLabel: buildPerformanceEvaluation(contractStats).rankLabel,
 });
 mobileControls.setPauseHandler(handleMobilePauseRequest);
+mobileControls.setMenuHandler(handleMobileShipMenuRequest);
 
 if (!shipMenuState.radioEnabled) {
   startLoop("deepSpace");
@@ -2087,6 +2108,7 @@ function startGameFromMainMenu(options = {}) {
   }
 
   appState.started = true;
+  mobileControls.show();
   resizeScene();
   window.setTimeout(resizeScene, 150);
   hideTrainingOverlay();
@@ -2376,6 +2398,7 @@ function animate() {
   }
 
   if (isPerformanceOverlayVisible()) {
+    mobileControls.hide();
     if (controllerEscapePressed || controllerEnterPressed) {
       hidePerformanceOverlay();
     }
@@ -2456,6 +2479,8 @@ function animate() {
     renderer.render(scene, camera);
     return;
   }
+
+  mobileControls.show();
 
   // Kessler block moved
   const totalSatelliteCount = satellites.length;
@@ -2633,6 +2658,7 @@ function animate() {
   }
 
   if (shiftState.terminalOpen) {
+    mobileControls.hide();
     stopGameplayLoops();
 
     drawOrbitalHud(hud, {
